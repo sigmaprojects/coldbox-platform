@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -34,8 +34,8 @@ Description		:
 				instance.generationPath = instance.generationPath & "/";
 			}
 			
-			instance.version 		= "1.3";
-			instance.mockGenerator 	= createObject("component","coldbox.system.testing.mockutils.MockGenerator").init(this);
+			instance.version 		= "2.2.0.@build.number@";
+			instance.mockGenerator 	= createObject("component","coldbox.system.testing.mockutils.MockGenerator").init( this, true );
 			
 			return this;
 		</cfscript>
@@ -126,9 +126,16 @@ Description		:
 	
 	<!--- createStub --->
 	<cffunction name="createStub" output="false" access="public" returntype="any" hint="Create an empty stub object that you can use for mocking.">
-		<cfargument name="callLogging" 	type="boolean" required="false" default="true" hint="Add method call logging for all mocked methods"/>
+		<cfargument name="callLogging" 	type="boolean" 	required="false" default="true" hint="Add method call logging for all mocked methods"/>
+		<cfargument name="extends" 		type="string" 	required="false" default="" hint="Make the stub extend from certain CFC"/>
+		<cfargument name="implements" 	type="string" 	required="false" default="" hint="Make the stub adhere to an interface"/>
 		<cfscript>
-			return createMock(className="coldbox.system.testing.mockutils.Stub",callLogging=arguments.callLogging);
+			// No implements or inheritance
+			if( NOT len( trim( arguments.implements ) ) AND NOT len( trim( arguments.extends ) ) ){
+				return createMock(className="coldbox.system.testing.mockutils.Stub", callLogging=arguments.callLogging);
+			}
+			// Generate the CFC + Create it + Remove it
+			return prepareMock( instance.mockGenerator.generateCFC(argumentCollection=arguments) );
 		</cfscript>
 	</cffunction>	
 
@@ -146,6 +153,25 @@ Description		:
 			return this;
 		</cfscript>	
 	</cffunction>	
+	
+	<!--- $getProperty --->
+	<cffunction name="$getProperty" hint="Gets an internal mocked object property" access="public" returntype="any" output="false">
+		<cfargument name="name" 	required="true"  hint="The name of the property to retrieve."/>
+		<cfargument name="scope" 	required="false" default="variables" hint="The scope to which to retrieve the property from. Defaults to 'variables' scope."/>
+		<cfargument name="default"  required="false" hint="Default value to return if property does not exist"/>
+		<cfscript>
+			var thisScope = evaluate( "#arguments.scope#" );
+			
+			if( structKeyExists( thisScope, arguments.name ) ){
+				return thisScope[ arguments.name ];
+			}
+			
+			if( structKeyExists( arguments, "default" ) ){
+				return arguments.default;
+			}
+		</cfscript>
+		<cfthrow type="MockBox.PropertyDoesNotExist" message="The property requested #arguments.name# does not exist in the #arguments.scope# scope">
+	</cffunction>
 	
 	<!--- $count --->
 	<cffunction name="$count" output="false" returntype="numeric" hint="I return the number of times the specified mock object's methods have been called or a specific method has been called.  If the mock method has not been defined the results is a -1">
@@ -243,8 +269,6 @@ Description		:
 	<!--- $args --->
 	<cffunction name="$args" output="false" access="public" returntype="any" hint="Use this method to mock specific arguments when calling a mocked method.  Can only be called when chained to a $() call.  If a method is called with arguments and no match, it defaults to the base results defined. Injected as: $args()">
 		<cfscript>
-			var argOrderedTree = "";
-			
 			// check if method is set on concat
 			if( len(this._mockCurrentMethod) ){
 				
@@ -273,6 +297,7 @@ Description		:
 		<cfargument name="throwDetail" 	  type="string"  required="false" default="" hint="The detail of the exception to throw"/>
 		<cfargument name="throwMessage"	  type="string"  required="false" default="" hint="The message of the exception to throw"/>
 		<cfargument name="callLogging" 	  type="boolean" required="false" default="false" hint="Will add the machinery to also log the incoming arguments to each subsequent calls to this method"/>
+		<cfargument name="preserveArguments" type="boolean" required="false" default="false" hint="If true, argument signatures are kept, else they are ignored. If true, BEWARE with $args() matching as default values and missing arguments need to be passed too."/>
 		<!--- ************************************************************* --->
 		<cfscript>
 			var fncMD = structnew();
@@ -357,8 +382,10 @@ Description		:
 	<!--- $reset --->
     <cffunction name="$reset" output="false" access="public" returntype="any" hint="Reset all mock counters and logs on the targeted mock. Injected as $reset">
     	<cfscript>
-    		this._mockMethodCallCounters = structnew();
-			this._mockCallLoggers 		 = structnew();
+			for( var item in this._mockMethodCallCounters ){
+				this._mockMethodCallCounters[ item ]	= 0;
+				this._mockCallLoggers[ item ]			= [];
+            }
 			return this;
 		</cfscript>
     </cffunction>
@@ -370,63 +397,95 @@ Description		:
 		<cfargument name="queryData"  type="string" required="true" hint="The data to create queries">
 		<cfscript>
 		/**
-		* Accepts a specifically formatted chunk of text, and returns it as a query object.
-		* v2 rewrite by Jamie Jackson
-		*
-		* @param queryData      Specifically format chunk of text to convert to a query. (Required)
-		* @return Returns a query object.
-		* @author Bert Dawson (bert@redbanner.com)
-		* @version 2, December 18, 2007
-		* 
-		*/
+		 * Accepts a specifically formatted chunk of text, and returns it as a query object.
+		 * v2 rewrite by Jamie Jackson
+		 * v3 rewrite by James Davis
+		 *
+		 * @param queryData      Specifically format chunk of text to convert to a query. (Required)
+		 * @return Returns a query object.
+		 * @author Bert Dawson (bert@redbanner.com)
+		 * @version 3, June 25, 2013
+		 *
+		 */
 		var fieldsDelimiter="|";
-	    var colnamesDelimiter=",";
-	    var listOfColumns="";
-	    var tmpQuery="";
-	    var numLines="";
-	    var cellValue="";
-	    var cellValues="";
-	    var colName="";
-	    var lineDelimiter=chr(10) & chr(13);
-	    var lineNum=0;
-	    var colPosition=0;
-	
-	    // the first line is the column list, eg "column1,column2,column3"
-	    listOfColumns = Trim(ListGetAt(queryData, 1, lineDelimiter));
-	    
-	    // create a temporary Query
-	    tmpQuery = QueryNew(listOfColumns);
-	
-	    // the number of lines in the queryData
-	    numLines = ListLen(queryData, lineDelimiter);
-	    
-	    // loop though the queryData starting at the second line
-	    for(lineNum=2; lineNum LTE numLines; lineNum = lineNum + 1) {
-	     cellValues = ListGetAt(queryData, lineNum, lineDelimiter);
-	
-	        if (ListLen(cellValues, fieldsDelimiter) IS ListLen(listOfColumns,",")) {
-	            QueryAddRow(tmpQuery);
-	            for (colPosition=1; colPosition LTE ListLen(listOfColumns); colPosition = colPosition + 1){
-	                cellValue = Trim(ListGetAt(cellValues, colPosition, fieldsDelimiter));
-	                colName = Trim(ListGetAt(listOfColumns,colPosition));
-	                QuerySetCell(tmpQuery, colName, cellValue);
-	            }
-	        }
-	    }
-	    
-	    return( tmpQuery );
+		var listOfColumns="";
+		var tmpQuery="";
+		var cellValues="";
+		var lineDelimiter=chr(10) & chr(13);
+		var lineNum=0;
+		var colPosition=0;
+		var queryRows = "";
+		var columnArray = '';
+
+		// the first line is the column list, eg "column1,column2,column3"
+		listOfColumns = Trim(ListFirst(queryData, lineDelimiter));
+		columnArray = ListToArray(listOfColumns);
+
+		// create a temporary Query
+		tmpQuery = QueryNew(listOfColumns);
+
+		// Array of rows (ignoring empty rows)
+		queryRows = ListToArray(queryData,lineDelimiter);
+
+		// loop though the queryData starting at the second line
+		for(lineNum=2; lineNum <= ArrayLen(queryRows); lineNum = lineNum + 1) {
+			cellValues = ListToArray(queryRows[lineNum], fieldsDelimiter, true); // Array of cell values, not ignoring empty values.
+			if (ArrayLen(cellValues) == listLen(listOfColumns)) {
+				QueryAddRow(tmpQuery);
+				for (colPosition=1; colPosition <= ArrayLen(cellValues); colPosition++){
+					QuerySetCell(tmpQuery,Trim(columnArray[colPosition]), Trim(cellValues[colPosition]));
+				}
+			}
+		}
+
+		return( tmpQuery );
 		</cfscript>
 	</cffunction>
 	
 	<!--- normalizeArguments --->
-    <cffunction name="normalizeArguments" output="false" access="public" returntype="string" hint="Normalize argument values on method calls">
-    	<cfargument name="args" type="any" required="true" hint="The arguments structure to normalize"/>
-    	<cfscript>
-    		var argOrderedTree = createObject("java","java.util.TreeMap").init(arguments.args).values().toString();
+	<cffunction name="normalizeArguments" output="false" access="public" returntype="any" hint="Normalize argument values on method calls">
+		<cfargument name="args" type="any" required="true" hint="The arguments structure to normalize"/>
+		<cfscript>
+			// TreeMap will give us arguments in a consistent order, but we can't rely on Java to serialize argument values in the same way ColdFusion will
+			var argOrderedTree = createObject("java","java.util.TreeMap").init(arguments.args);
+			var serializedArgs = "";
+			var arg = "";
 			
-			return hash( argOrderedTree );
+			for(arg in argOrderedTree) {
+				if( NOT structKeyExists( argOrderedTree, arg ) ){
+					/* we aren't going to be able to serialize an undefined variable, this might occur if an arguments structure
+					 * containing optional parameters is passed by argumentCollection=arguments to the mocked method.
+					 */
+					 continue;
+				}
+				else if( isSimpleValue( argOrderedTree[ arg ] ) ){
+					/* toString() works best for simple values.  It is equivalent in the following scenario
+					 * i = 1;
+					 * j = i; j++; j--;
+					 * toString(i) eq toString(j);
+					 * This works around the ColdFusion bug (9.0.2 at least) where an integer variable is converted to a real number by the ++ or -- operators.
+					 * serializeJSON and other Java methods of stringifying don't work around that issue.
+					 * 
+					 * Strangely, it converts a literal real number 1.0 to the string "1.0".
+					 */
+					serializedArgs &= toString( argOrderedTree[ arg ] );
+				}
+				else if( isObject( argOrderedTree[ arg ] ) and isInstanceOf( argOrderedTree[ arg ], "Component" ) ){
+					// If an object and CFC, just use serializeJSON 
+					serializedArgs &= serializeJSON( argOrderedTree[ arg ] );
+				}
+				else{
+					// Get obj rep
+					serializedArgs &= argOrderedTree[ arg ].toString();
+				}
+				
+			}
+			/* ColdFusion isn't case sensitive, so case of string values shouldn't matter.  We do it after serializing all args 
+			 * to catch any values deep in complex variables.
+			 */
+			return hash( lcase( serializedArgs ) );
 		</cfscript>
-    </cffunction>
+	</cffunction>
 
 <!------------------------------------------- PRIVATE ------------------------------------------>
 	
@@ -461,6 +520,7 @@ Description		:
 			obj.$ 					= variables.$;
 			// Mock Property
 			obj.$property	 		= variables.$property;
+			obj.$getProperty	 	= variables.$getProperty;
 			// Mock Results
 			obj.$results			= variables.$results;
 			// Mock Arguments
@@ -487,5 +547,12 @@ Description		:
 	<cffunction name="getUtil" access="private" output="false" returntype="coldbox.system.core.util.Util" hint="Create and return a util object">
 		<cfreturn createObject("component","coldbox.system.core.util.Util")/>
 	</cffunction>
-
+	
+	<cffunction name="maildump">
+		<cfargument name="content" default="failure">
+		<cfargument name="to" default="safeldkamp@natsem.com">
+		<cfargument name="subject" default="MockBox.cfc">
+		<cfmail from="webalerts@natsem.com" to="#to#" subject="#subject#" type=HTML><cfdump var="#arguments.content#" expand="true"></cfmail>
+	</cffunction>
+	
 </cfcomponent>

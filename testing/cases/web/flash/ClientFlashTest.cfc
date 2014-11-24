@@ -1,11 +1,14 @@
-<cfcomponent extends="coldbox.system.testing.BaseTestCase" output="false">
+﻿<cfcomponent extends="coldbox.system.testing.BaseTestCase" output="false">
 <cfscript>
+	this.loadColdBox = false;
 	function setup(){
 		flash = getMockBox().createMock("coldbox.system.web.flash.ClientFlash");
 		mockController = getMockBox().createMock(className="coldbox.system.web.Controller");
 		converter = getMockBox().createMock(className="coldbox.system.core.conversion.ObjectMarshaller").init();
+		
 		flash.init(mockController);
-		obj = createObject("component","coldbox.system.core.cf.CFMLEngine").init();
+		
+		obj = createObject("component","coldbox.system.core.util.CFMLEngine").init();
 		
 		//test scope
 		testscope = {
@@ -35,7 +38,8 @@
 	function testgetFlash(){
 		assertEquals( flash.getFlash(), structNew());
 		
-		client[flash.getFlashKey()] = converter.serializeObject(testscope);
+		client[flash.getFlashKey()] = converter.serializeObject( testscope );
+		
 		assertEquals( flash.getFlash(), testScope);
 	}
 </cfscript>

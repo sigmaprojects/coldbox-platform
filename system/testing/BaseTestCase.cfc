@@ -1,38 +1,16 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
 ********************************************************************************
 Author 	  : Luis Majano
 Description :
-	Base Unit Test Component based on MXUnit.
-	{ADD MORE DESCRIPTION HERE}
-	
-	This is a base test component for testing coldbox handlers. All you need
-	to do is add the extends portions of your test cases to this base test
-	and you will have a coldbox handler test.  The setup method will need
-	to be changed in order to match your application path.
+	Base Unit Test Component based on TestBox for the ColdBox Platform
 
-	MODIFY:
-	1) instance.appMapping : To point to your application relative from the root
-	                         or via CF Mappings.
-	2) instance.ConfigMapping : The expanded path location of your coldbox configuration file.
-
-	OPTIONAL:
-	3) Execute the on App start handler. You will need to fill out the name
-	   of the Application Start Handler to be executed.
-
-<cfscript>
-people = querySim('
-id , name , mail
-1 | weed | weed@theflowerpot.not
-2 | bill | bill@theflowerpot.not
-3 | ben | ben@theflowerpot.not
-');
-</cfscript>
+TODO: Remove MXUnit compat for 4.0 and rely only on BaseSpec.
 
 ---------------------------------------------------------------------->
-<cfcomponent extends="mxunit.framework.TestCase" 
+<cfcomponent extends="coldbox.system.testing.compat.framework.TestCase" 
 			 output="false" 
 			 hint="A base test case for doing ColdBox Testing based on the MXUnit Framework">
 
@@ -47,9 +25,6 @@ id , name , mail
 		
 		// Public Switch Properties
 		this.loadColdbox = true;
-		
-		// Prepare MockBox
-		instance.mockBox = createObject("component","coldbox.system.testing.MockBox").init();
 	</cfscript>
 
 	<!--- metadata Inspection --->
@@ -60,7 +35,7 @@ id , name , mail
 			if( structKeyExists(md,"appMapping") ){
 				instance.appMapping = md.appMapping;
 			}
-			// Config.xml mapping
+			// Configuration File mapping
 			if( structKeyExists(md,"configMapping") ){
 				instance.configMapping = md.configMapping;
 			}
@@ -75,8 +50,8 @@ id , name , mail
 		</cfscript>
 	</cffunction>
 
-	<!--- setup --->
-	<cffunction name="setup" hint="The main setup method for running ColdBox enabled tests" output="false">
+	<!--- beforeTests --->
+	<cffunction name="beforeTests" hint="The main setup method for running ColdBox Integration enabled tests" output="false">
 		<cfscript>
 		var appRootPath = "";
 		var context		= "";
@@ -92,56 +67,67 @@ id , name , mail
 			}
 			else{
 				// Verify App Root Path
-				if( NOT len(instance.appMapping) ){ instance.appMapping = "/"; }
-				appRootPath = expandPath(instance.appMapping);
+				if( NOT len( instance.appMapping ) ){ instance.appMapping = "/"; }
+				appRootPath = expandPath( instance.appMapping );
 				// Clean the path for nice root path.
-				if( NOT reFind("(/|\\)$",appRootPath) ){
+				if( NOT reFind( "(/|\\)$", appRootPath ) ){
 					appRootPath = appRootPath & "/";
 				}
-				
-				// Config.xml by convention if not set before setup() call.
-				if(NOT len(instance.configMapping) ){
-					// check CFC First for convention testing.
-					if( fileExists(appRootPath & "config/Coldbox.cfc") ){
-						instance.configMapping = appRootPath & "config/Coldbox.cfc";
+				// Setup Coldbox configuration by convention
+				if(NOT len( instance.configMapping ) ){
+					if( len( instance.appMapping ) ){
+						instance.configMapping = instance.appMapping & ".config.Coldbox";
 					}
 					else{
-						instance.configMapping = appRootPath & "config/coldbox.xml.cfm";
+						instance.configMapping = "config.Coldbox";
 					}
 				}
-				
 				//Initialize mock Controller
-				instance.controller = CreateObject("component", "coldbox.system.testing.mock.web.MockController").init( appRootPath );
-				
+				instance.controller = CreateObject("component", "coldbox.system.testing.mock.web.MockController").init( appRootPath=appRootPath, appKey=instance.coldboxAppKey );
 				// persist for mock testing in right name
-				application[getColdboxAppKey()] = instance.controller;
-				
+				application[ getColdboxAppKey() ] = instance.controller;
 				// Setup
-				instance.controller.getLoaderService().loadApplication(instance.configMapping,instance.appMapping);
+				instance.controller.getLoaderService().loadApplication( instance.configMapping, instance.appMapping );
 			}
-			
-			//Clean up Initial Event Context
-			context = getRequestContext();
-			context.clearCollection();
-			context.clearCollection(private=true);
+			// Auto registration of test as interceptor
+			instance.controller.getInterceptorService().registerInterceptor(interceptorObject=this);
 		}
 		</cfscript>
 	</cffunction>
 	
-	<!--- tearDown --->
-	<cffunction name="tearDown" hint="The main teardown for ColdBox enabled applications" output="false">
+	<!--- setup --->
+	<cffunction name="setup" hint="This executes before any test method for integration tests." output="false">
 		<cfscript>
-			structDelete(application,getColdboxAppKey());
+			// Are we doing integration tests
+			if( this.loadColdbox ){
+				getController().getRequestService().removeContext();
+			}
+		</cfscript>
+	</cffunction>
+
+	<!--- afterTests --->
+	<cffunction name="afterTests" hint="xUnit: The main teardown for ColdBox enabled applications after all tests execute" output="false">
+		<cfscript>
+			structDelete( application, getColdboxAppKey() );
+		</cfscript>
+	</cffunction>
+
+	<!--- beforeAll --->
+	<cffunction name="beforeAll" hint="BDD: The main setup method for running ColdBox Integration enabled tests" output="false">
+		<cfscript>
+			beforeTests();
+		</cfscript>
+	</cffunction>
+
+	<!--- afterAll --->
+	<cffunction name="afterAll" hint="BDD: The main teardown for ColdBox enabled applications after all tests execute" output="false">
+		<cfscript>
+			afterTests();
 		</cfscript>
 	</cffunction>
 
 <!------------------------------------------- HELPERS ------------------------------------------->
 
-	<!--- getMockBox --->
-	<cffunction name="getMockBox" output="false" access="private" returntype="coldbox.system.testing.MockBox" hint="Get a reference to the MockBox framework">
-		<cfreturn instance.mockBox>
-	</cffunction>
-	
 	<!--- Get a Mock Datasource Object --->
 	<cffunction name="getMockDatasource" access="private" output="false" returnType="coldbox.system.core.db.DatasourceBean" hint="I will return to you a datasourceBean according to the mocking parameters sent">
 		<cfargument name="name" 	type="string" required="true"  hint="The name of the DSN on the ColdFusion administrator"/>
@@ -162,6 +148,20 @@ id , name , mail
 			return getMockBox().createMock("coldbox.system.core.collections.ConfigBean").init(arguments.configStruct);
 		</cfscript>
 	</cffunction>
+	
+	<!--- getMockRequestBuffer --->
+	<cffunction name="getMockRequestBuffer" access="private" output="false" returnType="coldbox.system.core.util.RequestBuffer" hint="I will return to you a mock request buffer object used mostly in interceptor calls">
+	    <cfscript>
+			return getMockBox().createMock("coldbox.system.core.util.RequestBuffer").init();
+		</cfscript>
+	</cffunction>
+	
+	<!--- getMockController --->
+	<cffunction name="getMockController" access="private" output="false" returnType="coldbox.system.testing.mock.web.MockController" hint="I will return a mock controller object">
+	    <cfscript>
+			return CreateObject("component", "coldbox.system.testing.mock.web.MockController").init('/unittest','unitTest');
+		</cfscript>
+	</cffunction>
 		
 	<!--- getMockRequestContext --->
 	<cffunction name="getMockRequestContext" output="false" access="private" returntype="coldbox.system.web.context.RequestContext" hint="Builds an empty functioning request context mocked with methods via MockBox.  You can also optionally wipe all methods on it.">
@@ -180,8 +180,9 @@ id , name , mail
 			}
 			
 			// Create functioning request context
-			mockRC = getMockBox().createMock("coldbox.system.web.context.RequestContext");
-			
+			mockRC 			= getMockBox().createMock("coldbox.system.web.context.RequestContext");
+			mockController = CreateObject("component", "coldbox.system.testing.mock.web.MockController").init('/unittest','unitTest');
+				
 			// Create mock properties
 			rcProps.DefaultLayout = "";
 			rcProps.DefaultView = "";
@@ -192,11 +193,10 @@ id , name , mail
 			rcProps.FolderLayouts = structnew();
 			rcProps.RegisteredLayouts = structnew();
 			rcProps.modules = structnew();
-			mockRC.init(rcProps);
+			mockRC.init( properties=rcProps, controller=mockController );
 			
 			// return decorator context
 			if( structKeyExists(arguments,"decorator") ){
-				mockController = CreateObject("component", "coldbox.system.testing.mock.web.MockController").init('/unittest');
 				return getMockBox().createMock(arguments.decorator).init(mockRC, mockController);
 			}
 			
@@ -251,6 +251,9 @@ id , name , mail
 				// Check if doing cbInit()
 				if( structKeyExists(plugin, "$cbInit") ){ plugin.$cbInit( mockController ); }
 			}
+			else{
+				plugin.init( mockController );
+			}
 			
 			return plugin;
 		</cfscript>
@@ -258,7 +261,8 @@ id , name , mail
 
 	<!--- Reset the persistence --->
 	<cffunction name="reset" access="private" returntype="void" hint="Reset the persistence of the unit test coldbox app, basically removes the controller from application scope" output="false" >
-		<cfset structDelete(application,getColdboxAppKey())>
+		<cfset structDelete( application, getColdboxAppKey() )>
+		<cfset structClear( request )>
 	</cffunction>
 	
 	<!--- get/Set Coldbox App Key --->
@@ -345,11 +349,15 @@ id , name , mail
 		<cfargument name="private" 			required="false" type="boolean" default="false" hint="Call a private event or not">
 		<cfargument name="prepostExempt"	required="false" type="boolean" default="false" hint="If true, pre/post handlers will not be fired.">
 		<cfargument name="eventArguments"   required="false" type="struct"  default="#structNew()#" hint="A collection of arguments to passthrough to the calling event handler method"/>
+		<cfargument name="renderResults" 	required="false" type="boolean" default="false" hint="If true, then it will try to do the normal rendering procedures and store the rendered content in the RC as cbox_rendered_content"/>
 		<cfscript>
 			var handlerResults  = "";
 			var requestContext  = "";
 			var relocationTypes = "TestController.setNextEvent,TestController.setNextRoute,TestController.relocate";
 			var cbController    = getController();
+			var renderData		= "";
+			var renderedContent = "";
+			var iData			= {};
 				
 			//Setup the request Context with setup FORM/URL variables set in the unit test.
 			setupRequest(arguments.event);
@@ -366,14 +374,59 @@ id , name , mail
 				if ( len(cbController.getSetting("RequestStartHandler")) ){
 					cbController.runEvent(cbController.getSetting("RequestStartHandler"),true);
 				}
-			
-				//TEST EVENT EXECUTION
-				handlerResults = cbController.runEvent(event=arguments.event,private=arguments.private,prepostExempt=arguments.prepostExempt,eventArguments=arguments.eventArguments);
-			
-				// Request Start Handler
-				if ( len(cbController.getSetting("RequestEndHandler")) ){
-					cbController.runEvent(cbController.getSetting("RequestEndHandler"),true);
+				
+				// grab the latest event in the context, in case overrides occur
+				requestContext  = getRequestContext();
+				arguments.event = requestContext.getCurrentEvent();
+				
+				// TEST EVENT EXECUTION
+				if( NOT requestContext.isNoExecution() ){
+					// execute the event
+					handlerResults = cbController.runEvent(event=arguments.event,
+													   private=arguments.private,
+													   prepostExempt=arguments.prepostExempt,
+													   eventArguments=arguments.eventArguments);
+					
+					// Are we doing rendering procedures?
+					if( arguments.renderResults ){
+						// preLayout
+						cbController.getInterceptorService().processState("preLayout");
+						
+						// Render Data?
+						renderData = requestContext.getRenderData();
+						if( isStruct( renderData ) and NOT structIsEmpty( renderData ) ){
+							renderedContent = cbController.getPlugin("Utilities").marshallData(argumentCollection=renderData);
+						}
+						// If we have handler results save them in our context for assertions
+						else if ( isDefined("handlerResults") ){
+							requestContext.setValue("cbox_handler_results", handlerResults);
+							renderedContent = handlerResults;
+						}
+						// render layout/view pair
+						else{
+							renderedContent = cbController.getPlugin("Renderer")
+								.renderLayout(module=requestContext.getCurrentLayoutModule(), 
+										     viewModule=requestContext.getCurrentViewModule());
+						}
+						
+						// Pre Render
+						iData = { renderedContent = renderedContent };
+						cbController.getInterceptorService().processState("preRender", iData);
+						renderedContent = iData.renderedContent;
+						
+						// Store in collection for assertions
+						requestContext.setValue( "cbox_rendered_content", renderedContent );
+					
+						// postRender
+						cbController.getInterceptorService().processState("postRender");
+					}
 				}
+				
+				// Request End Handler
+				if ( len(cbController.getSetting("RequestEndHandler")) ){
+					cbController.runEvent( cbController.getSetting("RequestEndHandler"), true );
+				}
+				
 				// postProcess
 				cbController.getInterceptorService().processState("postProcess");
 				
@@ -385,23 +438,23 @@ id , name , mail
 				}
 			}
 			
-			//Return the correct event context.
+			// Return the correct event context.
 			requestContext = getRequestContext();
-			
-			//If we have results save them in our context for assertions
-			if ( isDefined("handlerResults") ){
-				requestContext.setValue("cbox_handler_results", handlerResults);
-			}
 			
 			return requestContext;
 		</cfscript>
 	</cffunction>
 	
 	<!--- Announce Interception --->
-	<cffunction name="announceInterception" access="private" returntype="void" hint="Announce an interception in the system." output="false" >
-		<cfargument name="state" 			required="true"  type="string" hint="The interception state to execute">
-		<cfargument name="interceptData" 	required="false" type="struct" default="#structNew()#" hint="A data structure used to pass intercepted information.">
-		<cfset getController().getInterceptorService().processState(argumentCollection=arguments)>
+	<cffunction name="announceInterception" access="private" returntype="any" hint="Announce an interception to the system. If you use the asynchronous facilities, you will get a thread structure report as a result." output="true" >
+		<cfargument name="state" 			required="true"  type="any" hint="The interception state to execute">
+		<cfargument name="interceptData" 	required="false" type="any" default="#structNew()#" hint="A data structure used to pass intercepted information.">
+		<cfargument name="async" 			required="false" type="boolean" default="false" hint="If true, the entire interception chain will be ran in a separate thread."/>
+		<cfargument name="asyncAll" 		required="false" type="boolean" default="false" hint="If true, each interceptor in the interception chain will be ran in a separate thread and then joined together at the end."/>
+		<cfargument name="asyncAllNoJoin"	required="false" type="boolean" default="false" hint="If true, each interceptor in the interception chain will be ran in a separate thread but NOT joined together at the end."/>
+		<cfargument name="asyncPriority" 	required="false" type="string"	default="NORMAL" hint="The thread priority to be used. Either LOW, NORMAL or HIGH. The default value is NORMAL"/>
+		<cfargument name="asyncJoinTimeout"	required="false" type="numeric"	default="0" hint="The timeout in milliseconds for the join thread to wait for interceptor threads to finish.  By default there is no timeout."/>
+		<cfreturn getController().getInterceptorService().processState(argumentCollection=arguments)>
 	</cffunction>
 
 	<!--- Interceptor Facade --->
@@ -418,13 +471,9 @@ id , name , mail
 	<!--- Get Model --->
 	<cffunction name="getModel" access="private" returntype="any" hint="Create or retrieve model objects by convention" output="false" >
 		<!--- ************************************************************* --->
-		<cfargument name="name" 				required="false" type="any" default="" hint="The name of the model to retrieve">
-		<cfargument name="useSetterInjection" 	required="false" type="any" hint="Whether to use setter injection alongside the annotations property injection. cfproperty injection takes precedence. Boolean" colddoc:generic="Boolean">
-		<cfargument name="onDICompleteUDF" 		required="false" type="any"	hint="After Dependencies are injected, this method will look for this UDF and call it if it exists. The default value is onDIComplete">
-		<cfargument name="stopRecursion"		required="false" type="any"  hint="A comma-delimmited list of stoprecursion classpaths.">
-		<cfargument name="dsl"					required="false" type="any"  hint="The dsl string to use to retrieve the domain object"/>
-		<cfargument name="executeInit"			required="false" type="any" default="true" hint="Whether to execute the init() constructor or not.  Defaults to execute, Boolean" colddoc:generic="Boolean"/>
-		<cfargument name="initArguments" 		required="false" hint="The constructor structure of arguments to passthrough when initializing the instance. Only available for WireBox integration" colddoc:generic="struct"/>
+		<cfargument name="name" 			required="false" 	hint="The mapping name or CFC instance path to try to build up"/>
+		<cfargument name="dsl"				required="false" 	hint="The dsl string to use to retrieve the instance model object, mutually exclusive with 'name'"/>
+		<cfargument name="initArguments" 	required="false" 	default="#structnew()#" hint="The constructor structure of arguments to passthrough when initializing the instance" colddoc:generic="struct"/>
 		<!--- ************************************************************* --->
 		<cfreturn getController().getPlugin("BeanFactory").getModel(argumentCollection=arguments)>
 	</cffunction>
@@ -462,14 +511,6 @@ id , name , mail
 	<cffunction name="$include" access="private" hint="Facade for cfinclude" returntype="void" output="false">
 		<cfargument name="template" type="string">
 		<cfinclude template="#template#">
-	</cffunction>
-	
-	<!--- Query Sim --->
-	<cffunction name="querySim" access="private" returntype="query" hint="Query Simulator" output="false" >
-		<cfargument name="queryData"  type="string" required="true" hint="The data to create queries">
-		<cfscript>
-		return getMockBox().querySim(argumentCollection=arguments);
-		</cfscript>
 	</cffunction>
 	
 	<!--- getUtil --->

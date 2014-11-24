@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -67,9 +67,16 @@ TODO: update dsl consistency, so it is faster.
 	<!--- buildProviderMixer --->
     <cffunction name="buildProviderMixer" output="false" access="public" returntype="any" hint="Used to provider providers via mixers on targeted objects">
     	<cfscript>
-    		// return the instance from the injected counterparts
-			return this.$wbScopeStorage.get(this.$wbScopeInfo.key, this.$wbScopeInfo.scope)
-						.getInstance( this.$wbProviders[ getFunctionCalledName() ] );
+			var targetInjector = this.$wbScopeStorage.get(this.$wbScopeInfo.key, this.$wbScopeInfo.scope);
+			var targetProvider = this.$wbProviders[ getFunctionCalledName() ];
+			
+			// Verify if this is a mapping first?
+			if( targetInjector.containsInstance( targetProvider ) ){
+				return targetInjector.getInstance(name=targetProvider, targetObject=this);
+			}
+			
+			// else treat as full DSL
+			return targetInjector.getInstance(dsl=targetProvider, targetObject=this);
 		</cfscript>
     </cffunction>
 	
@@ -78,9 +85,20 @@ TODO: update dsl consistency, so it is faster.
     	<cfargument name="mapping" 			required="true" 	hint="The mapping to construct" colddoc:generic="coldbox.system.ioc.config.Mapping">
     	<cfargument name="initArguments" 	required="false"	default="#structnew()#" 	hint="The constructor structure of arguments to passthrough when initializing the instance" colddoc:generic="struct"/>
 		<cfscript>
-			var thisMap = arguments.mapping;
-			var oModel 	= createObject("component", thisMap.getPath() );
+			var thisMap 		= arguments.mapping;
+			var oModel 			= createObject("component", thisMap.getPath() );
 			var constructorArgs = "";
+			var viMapping		= "";
+			
+			// Do we have virtual inheritance?
+			if( arguments.mapping.isVirtualInheritance() ){
+				// retrieve the VI mapping.
+				viMapping = instance.injector.getBinder().getMapping( arguments.mapping.getVirtualInheritance() );
+				// Does it match the family already?
+				if( NOT isInstanceOf(oModel, viMapping.getPath() ) ){
+					toVirtualInheritance( viMapping, oModel );
+				}
+			}
 		</cfscript>
 		
 		<!--- Constructor initialization? --->
@@ -146,7 +164,6 @@ TODO: update dsl consistency, so it is faster.
 		<cfreturn oModel>
     </cffunction>
 
-	
 	<!--- buildJavaClass --->
     <cffunction name="buildJavaClass" output="false" access="public" returntype="any" hint="Build a Java class via mappings">
     	<cfargument name="mapping" 	required="true" hint="The mapping to construct" colddoc:generic="coldbox.system.ioc.config.Mapping">
@@ -204,7 +221,7 @@ TODO: update dsl consistency, so it is faster.
 				
 				// Is it by DSL construction? If so, add it and continue, if not found it returns null, which is ok
 				if( structKeyExists(DIArgs[x],"dsl") ){
-					args[ DIArgs[x].name ] = buildDSLDependency( DIArgs[x], thisMap.getName(), arguments.targetObject );
+					args[ DIArgs[x].name ] = buildDSLDependency( definition=DIArgs[x], targetID=thisMap.getName(), targetObject=arguments.targetObject );
 					continue;
 				}
 				
@@ -273,12 +290,13 @@ TODO: update dsl consistency, so it is faster.
 	<cffunction name="buildSimpleDSL" output="false" access="public" returntype="any" hint="Build a DSL Dependency using a simple dsl string">
 		<cfargument name="dsl" 			required="true" 	hint="The dsl string to build">
 		<cfargument name="targetID" 	required="true" 	hint="The target ID we are building this dependency for"/>
+		<cfargument name="targetObject" required="false"	default="" 	hint="The target object we are building the DSL dependency for"/>
 		<cfscript>
 			var definition = {
 				name = "",
 				dsl = arguments.dsl
 			};
-			return buildDSLDependency( definition, arguments.targetID );
+			return buildDSLDependency( definition=definition, targetID=arguments.targetID, targetObject=arguments.targetObject );
 		</cfscript>
 	</cffunction>
 
@@ -286,30 +304,28 @@ TODO: update dsl consistency, so it is faster.
 	<cffunction name="buildDSLDependency" output="false" access="public" returntype="any" hint="Build a DSL Dependency, if not found, returns null">
 		<cfargument name="definition" 	required="true"  hint="The dependency definition structure: name, dsl as keys">
 		<cfargument name="targetID" 	required="true"  hint="The target ID we are building this dependency for"/>
-		<cfargument name="targetObject" required="false" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
+		<cfargument name="targetObject" required="false" default="" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
 		<cfscript>
 			var refLocal 			= {};
 			var DSLNamespace 		= listFirst(arguments.definition.dsl,":");
-			var coldboxDSLRegex		= "^(ioc|ocm|webservice|javaloader|entityService|coldbox|cachebox)$";
-			
-			// coldbox context check
-			if( refindNoCase(coldboxDSLRegex,DSLNamespace) AND NOT instance.injector.isColdBoxLinked() ){
-				instance.utility.throwIt(message="The DSLNamespace: #DSLNamespace# cannot be used as it requires a ColdBox Context",type="Builder.IllegalDSLException");
-			}
-			// cachebox context check
-			else if( refindNoCase("^cachebox",DSLNamespace) AND NOT instance.injector.isCacheBoxLinked() ){
-				instance.utility.throwIt(message="The DSLNamespace: #DSLNamespace# cannot be used as it requires a CacheBox Context",type="Builder.IllegalDSLException");
-			}
+			var coldboxDSLRegex		= "^(ioc|ocm|webservice|javaloader|coldbox|cachebox)$";
 			
 			// Determine Type of Injection according to Internal Types first
 			// Some namespaces requires the ColdBox context, if not found, an exception is thrown.
-			switch(DSLNamespace){
+			switch( DSLNamespace ){
 				// ColdBox Context DSL
-				case "ioc" : case "ocm" : case "webservice" : case "javaloader" : case "entityService" :case "coldbox" : { 
+				case "ioc" : case "ocm" : case "webservice" : case "javaloader" : case "coldbox" : { 
 					refLocal.dependency = instance.coldboxDSL.process(argumentCollection=arguments); break; 
 				} 
 				// CacheBox Context DSL
-				case "cacheBox"			 : { refLocal.dependency = instance.cacheBoxDSL.process(argumentCollection=arguments); break;}
+				case "cacheBox"			 : { 
+					// check if linked
+					if( !instance.injector.isCacheBoxLinked() AND !instance.injector.isColdBoxLinked() ){
+						instance.utility.throwIt(message="The DSLNamespace: #DSLNamespace# cannot be used as it requires a ColdBox/CacheBox Context",type="Builder.IllegalDSLException");
+					}
+					// retrieve it
+					refLocal.dependency = instance.cacheBoxDSL.process(argumentCollection=arguments); break;
+				}
 				// logbox injection DSL always available
 				case "logbox"			 : { refLocal.dependency = instance.logBoxDSL.process(argumentCollection=arguments); break;}
 				// WireBox Internal DSL for models and id
@@ -318,38 +334,74 @@ TODO: update dsl consistency, so it is faster.
 				case "provider"			 : { refLocal.dependency = getProviderDSL(argumentCollection=arguments); break; }
 				// wirebox injection DSL always available
 				case "wirebox"			 : { refLocal.dependency = getWireBoxDSL(argumentCollection=arguments); break;}
+				// wirebox entity services
+				case "entityService"	 : { refLocal.dependency = getEntityServiceDSL(argumentCollection=arguments); break;}
+				// java class
+				case "java"				 : { refLocal.dependency = getJavaDSL(argumentCollection=arguments); break; }
 				
 				// No internal DSL's found, then check custom DSL's
 				default : {
 					// Check if Custom DSL exists, if it does, execute it
-					if( structKeyExists(instance.customDSL, DSLNamespace) ){
+					if( structKeyExists( instance.customDSL, DSLNamespace ) ){
 						refLocal.dependency = instance.customDSL[ DSLNamespace ].process(argumentCollection=arguments);
 					}
 					
 					// If no custom DSL's found, let's try to use the name as the empty namespace
-					if( NOT find(":", arguments.definition.dsl) ){
+					if( NOT find( ":", arguments.definition.dsl ) ){
 						arguments.definition.dsl = "id:#arguments.definition.dsl#";
 						refLocal.dependency = getModelDSL(argumentCollection=arguments);
 					}
 				}
 			}
-				
+			
 			// return only if found
-			if( structKeyExists(refLocal,"dependency") ){ return refLocal.dependency; }
+			if( structKeyExists( refLocal, "dependency" ) ){ return refLocal.dependency; }
 			
-			// Logging
-			if( instance.log.canError() ){
-				instance.log.error("Target: #arguments.targetID# -> DSL Definition: #arguments.definition.toString()# did not produce any resulting dependency");
+			// was dependency required? If so, then throw exception
+			if( arguments.definition.required ){
+				// Logging
+				if( instance.log.canError() ){
+					instance.log.error("Target: #arguments.targetID# -> DSL Definition: #arguments.definition.toString()# did not produce any resulting dependency");
+				}
+				
+				// Throw exception as DSL Dependency requested was not located
+				instance.utility.throwit(message="The DSL Definition #arguments.definition.toString()# did not produce any resulting dependency",
+										 detail="The target requesting the dependency is: '#arguments.targetID#'",
+										 type="Builder.DSLDependencyNotFoundException");
 			}
-			
-			// Throw exception as DSL Dependency requested was not located
-			instance.utility.throwit(message="The DSL Definition #arguments.definition.toString()# did not produce any resulting dependency",
-									 detail="The target requesting the dependency is: '#arguments.targetID#'",
-									 type="Builder.DSLDependencyNotFoundException");
+			// else return void, no dependency found that was required									 
 		</cfscript>
 	</cffunction>
 
 <!------------------------------------------- DSL BUILDER METHODS ------------------------------------------>
+
+	<!--- getJavaDSL --->
+	<cffunction name="getJavaDSL" access="private" returntype="any" hint="Get a Java object" output="false" >
+		<cfargument name="definition" 	required="true" type="any" hint="The dependency definition structure">
+		<cfargument name="targetObject" required="false" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
+		<cfscript>
+			var javaClass  = getToken( arguments.definition.dsl, 2, ":" );
+
+			return createObject("java", javaClass);
+		</cfscript>
+	</cffunction>
+	
+	<!--- getEntityServiceDSL --->
+	<cffunction name="getEntityServiceDSL" access="private" returntype="any" hint="Get a virtual entity service object" output="false" >
+		<cfargument name="definition" 	required="true" type="any" hint="The dependency definition structure">
+		<cfargument name="targetObject" required="false" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
+		<cfscript>
+			var entityName  = getToken(arguments.definition.dsl,2,":");
+
+			// Do we have an entity name? If we do create virtual entity service
+			if( len(entityName) ){
+				return createObject("component","coldbox.system.orm.hibernate.VirtualEntityService").init( entityName );
+			}
+
+			// else Return Base ORM Service
+			return createObject("component","coldbox.system.orm.hibernate.BaseORMService").init();
+		</cfscript>
+	</cffunction>
 
 	<!--- getWireBoxDSL --->
 	<cffunction name="getWireBoxDSL" access="private" returntype="any" hint="Get dependencies using the wirebox dependency DSL" output="false" >
@@ -439,31 +491,86 @@ TODO: update dsl consistency, so it is faster.
 	<!--- getProviderDSL --->
 	<cffunction name="getProviderDSL" access="private" returntype="any" hint="Get dependencies using the our provider pattern DSL" output="false" >
 		<cfargument name="definition" 	required="true"  hint="The dependency definition structure">
-		<cfargument name="targetObject" required="false" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
-		
+		<cfargument name="targetObject" required="false" default="" hint="The target object we are building the DSL dependency for. If empty, means we are just requesting building"/>
 		<cfscript>
 			var thisType 		= arguments.definition.dsl;
 			var thisTypeLen 	= listLen(thisType,":");
 			var providerName 	= "";
+			var args			= {};
 			
 			// DSL stages
-			switch(thisTypeLen){
+			switch( thisTypeLen ){
 				// provider default, get name of the provider from property
 				case 1: { providerName = arguments.definition.name; break; }
 				// provider:{name} stage
-				case 2: { providerName = getToken(thisType,2,":"); break;
+				case 2: { providerName = getToken(thisType,2,":"); break; }
+				// multiple stages then most likely it is a full DSL being used
+				default : {
+					providerName = replaceNoCase( thisType, "provider:", "" );
 				}
 			}
 
-			// Check if model Exists
+			// Build provider arguments
+			args = { 
+				scopeRegistration = instance.injector.getScopeRegistration(),
+				scopeStorage = instance.injector.getScopeStorage(),
+				targetObject = arguments.targetObject
+			};
+			
+			// Check if the passed in provider is an ID directly
 			if( instance.injector.containsInstance( providerName ) ){
-				// Build provider and return it.
-				return createObject("component","coldbox.system.ioc.Provider").init(instance.injector.getScopeRegistration(), instance.injector.getScopeStorage(), providerName);
+				args.name = providerName;
 			}
-			else if( instance.log.canDebug() ){
-				instance.log.debug("getProviderDSL() cannot find model object #providerName# using definition #arguments.definition.toString()#");
+			// Else try to tag it by FULL DSL
+			else{
+				args.dsl = providerName;
 			}
+			
+			// Build provider and return it.
+			return createObject("component","coldbox.system.ioc.Provider").init( argumentCollection=args );
 		</cfscript>
 	</cffunction>
+	
+	<!--- toVirtualInheritance --->
+    <cffunction name="toVirtualInheritance" output="false" access="public" returntype="void" hint="Do our virtual inheritance magic">
+    	<cfargument name="mapping" 	required="true" hint="The mapping to convert to"/>
+		<cfargument name="target" 	required="true" hint="The target object"/>
+		<cfscript>
+			var baseObject 		= "";
+			var familyPath 		= "";
+			var key 	   		= "";
+			var constructorArgs = "";
+			var excludedProperties = "$super,$wbaopmixed,$mixed,$WBAOPTARGETMAPPING,$WBAOPTARGETS";
+			
+			// Mix it up baby
+			instance.utility.getMixerUtil().start( arguments.target );
+			
+			// Create base family object
+			baseObject = instance.injector.getInstance( arguments.mapping.getName() );
+			
+			// Check if init already exists in target and base?
+			if( structKeyExists(arguments.target, "init") AND structKeyExists(baseObject,"init") ){
+				arguments.target.$superInit = baseObject.init;
+			}	
+			
+			// Mix in methods
+			for(key in baseObject){
+				// If target has overriden method, then don't override it with mixin, simulated inheritance
+				if( NOT structKeyExists(arguments.target, key) AND NOT listFindNoCase(excludedProperties, key) ){
+					arguments.target.injectMixin( key, baseObject[key] );
+				}
+			}
+			
+			// Mix in virtual super class
+			arguments.target.$super = baseObject;
+			// Verify if we need to init the virtualized object
+			if( structKeyExists(arguments.target, "$superInit") ){ 
+				// get super constructor arguments.
+				constructorArgs = buildArgumentCollection( arguments.mapping, arguments.mapping.getDIConstructorArguments(), baseObject );
+				// Init the virtualized inheritance
+				arguments.target.$superInit(argumentCollection=constructorArgs); 
+			}
+		</cfscript>
+    </cffunction>
 		
 </cfcomponent>

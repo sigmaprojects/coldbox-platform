@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -12,7 +12,7 @@ Description :
 Modification History:
 01/18/2007 - Created
 ----------------------------------------------------------------------->
-<cfcomponent name="pluginserviceTest" extends="coldbox.system.testing.BaseTestCase" output="false" appMapping="/coldbox/testharness">
+<cfcomponent name="pluginserviceTest" extends="coldbox.system.testing.BaseTestCase" output="false" appMapping="/coldbox/test-harness">
 
 	<cffunction name="setUp" returntype="void" access="public" output="false">
 		<cfscript>

@@ -1,9 +1,9 @@
-<cfcomponent name="cfmlengine" output="false" extends="coldbox.system.testing.BaseTestCase">
+﻿<cfcomponent name="cfmlengine" output="false" extends="coldbox.system.testing.BaseTestCase">
 	
 	<!--- setup --->
 	<cffunction name="setup" output="false" access="public" returntype="any" hint="">
 		<cfscript>
-			cfmlengine = CreateObject("component","coldbox.system.core.cf.CFMLEngine").init();
+			cfmlengine = CreateObject("component","coldbox.system.core.util.CFMLEngine").init();
 		</cfscript>
 	</cffunction>
 	

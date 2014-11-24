@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -9,7 +9,7 @@ Date        :	June 01 2008
 Description :
 	FeedReaderTest plugin test
 ----------------------------------------------------------------------->
-<cfcomponent extends="coldbox.system.testing.BaseTestCase" appMapping="/coldbox/testharness">
+<cfcomponent extends="coldbox.system.testing.BaseTestCase" appMapping="/coldbox/test-harness">
 
 	<cffunction name="setUp" returntype="void" access="public" output="false">
 		<cfscript>

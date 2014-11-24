@@ -1,20 +1,82 @@
-component extends="coldbox.system.testing.BaseTestCase"{
+﻿component extends="coldbox.system.testing.BaseTestCase"{
 
+	this.loadColdBox = false;
+	
+	function beforeTests(){
+		super.beforeTests();
+		// Load our test injector for ORM entity binding
+		new coldbox.system.ioc.Injector(binder="coldbox.testing.cases.orm.hibernate.WireBox");
+	}
+	
 	function setup(){
-		ormservice   = getMockBox().createMock("coldbox.system.orm.hibernate.BaseORMService");
-		mockEH = getMockBox().createEmptyMock("coldbox.system.orm.hibernate.EventHandler");
+		ormservice 	= getMockBox().createMock("coldbox.system.orm.hibernate.BaseORMService");
+		mockEH 		= getMockBox().createMock("coldbox.system.orm.hibernate.WBEventHandler");
 
 		// Mocks
 		ormservice.init();
 
 		// Mock event handler
-		ormservice.$property("ORMEventHandler","variables",mockEH);
+		ormservice.$property( "ORMEventHandler", "variables", mockEH );
 
 		// Test ID's
 		testUserID = '88B73A03-FEFA-935D-AD8036E1B7954B76';
 		testCatID  = '3A2C516C-41CE-41D3-A9224EA690ED1128';
 		test2 = ["1","2"];
 	}
+	
+	function testCountByDynamically(){
+		// Test simple Equals
+		t = ormservice.countByLastName("User", "majano");
+		assert( 1 eq t, "CountBylastName" );
+		
+	}
+	function testFindByDynamically(){
+		// Test simple Equals
+		t = ormservice.findByLastName("User", "majano");
+		assert( isObject( t ), "FindBylastName" );
+		// Test simple Equals with invalid
+		t = ormservice.findByLastName("User", "d");
+		assert( isNull( t ), "Invalid last name" );
+		// Using Conditionals
+		t = ormservice.findAllByLastNameLessThanEquals("User", "Majano" );
+		assert( arraylen( t ) , "Conditionals LessThanEquals");
+		t = ormservice.findAllByLastNameLessThan("User", "Majano" );
+		assert( arraylen( t ) , "Conditionals LessThan");
+		t = ormservice.findAllByLastNameGreaterThan("User", "Majano" );
+		assert( arraylen( t ) , "Conditionals GreaterThan");
+		t = ormservice.findAllByLastNameGreaterThanEquals("User", "Majano" );
+		assert( arraylen( t ) , "Conditionals GreaterThanEqauls");
+		t = ormservice.findByLastNameLike("User", "ma%" );
+		assert( isObject( t ) , "Conditionals Like");
+		t = ormservice.findAllByLastNameNotEqual("User", "Majano" );
+		assert( arrayLen( t ) , "Conditionals Equal");
+		t = ormservice.findByLastNameIsNull("User");
+		assert( isNull( t ) , "Conditionals isNull");
+		t = ormservice.findAllByLastNameIsNotNull("User");
+		assert( arrayLen( t ) , "Conditionals isNull");
+		t = ormservice.findAllByLastLoginBetween("User", "01/01/2009", "01/01/2012");
+		assert( arrayLen( t ) , "Conditionals between");
+		t = ormservice.findByLastLoginBetween("User", "01/01/2008", "11/01/2008");
+		assert( isNull( t ) , "Conditionals between");
+		t = ormservice.findByLastLoginNotBetween("User", "01/01/2009", "01/01/2018");
+		assert( isNull( t ) , "Conditionals not between");
+		t = ormservice.findAllByLastNameInList("User", "Majano,Fernando");
+		assert( arrayLen( t ) , "Conditionals inList");
+		t = ormservice.findAllByLastNameInList("User", listToArray(  "Majano,Fernando" ));
+		assert( arrayLen( t ) , "Conditionals inList");
+		t = ormservice.findAllByLastNameNotInList("User", listToArray(  "Majano,Fernando" ));
+		assert( arrayLen( t ) , "Conditionals NotinList");
+	}	
+	
+	function testFindByDynamicallyBadProperty(){
+		expectException("BaseORMService.InvalidEntityProperty");
+		t = ormservice.findByLastAndFirst("User");
+	}	
+	
+	function testFindByDynamicallyFailure(){
+		expectException("BaseORMService.HQLQueryException");
+		t = ormservice.findByLastName("User");
+	}	
 
 	function testExists(){
 		assertEquals( false, ormservice.exists("Category", "123") );
@@ -67,7 +129,7 @@ component extends="coldbox.system.testing.BaseTestCase"{
 		ormservice.new("User");
 
 		// Test with arguments.
-		user = ormService.new(entityName="User",firstName="luis",lastName="majano");
+		user = ormService.new(entityName="User",properties={firstName="luis",lastName="majano"});
 		debug(user);
 		assertEquals( "luis", user.getFirstName() );
 		assertEquals( "majano", user.getLastName() );
@@ -117,6 +179,12 @@ component extends="coldbox.system.testing.BaseTestCase"{
 
 		user = ormService.get("User",'');
 		assertTrue( isNull( user.getID() ) );
+
+		// ReturnNew = false
+		user = ormService.get(entityName="User",id=4,returnNew=false);
+		assertTrue( isNull( user ) );
+		user = ormService.get(entityName="User",id=0,returnNew=false);
+		assertTrue( isNull( user ) );
 	}
 	function testGetAll(){
 		r = ormService.getAll('Category');
@@ -124,7 +192,7 @@ component extends="coldbox.system.testing.BaseTestCase"{
 
 		r = ormService.getAll('Category',"A13C0DB0-0CBC-4D85-A5261F2E3FCBEF91","category");
 		assertTrue( arraylen( r ) eq 1 );
-		
+
 		r = ormService.getAll('Category',[1,2]);
 		assertFalse( arraylen( r ) );
 
@@ -133,7 +201,7 @@ component extends="coldbox.system.testing.BaseTestCase"{
 
 		r = ormService.getAll('Category',[testCatID,testCatID]);
 		assertTrue( isObject( r[1] ) );
-		
+
 		r = ormService.getAll(entityName='Category',sortOrder="category desc");
 		assertTrue( arrayLen(r) );
 
@@ -150,6 +218,30 @@ component extends="coldbox.system.testing.BaseTestCase"{
 			//debug(test);
 			ormservice.delete( test );
 			test = entityLoad("Category",{category="unittest"}, true);
+			assertTrue( isNull(test) );
+		}
+		catch(any e){
+			fail(e.detail & e.message);
+		}
+		finally{
+			q = new Query(datasource="coolblog");
+			q.execute(sql="delete from categories where category = 'unitTest'");
+		}
+	}
+
+	function testDeleteWithFlush(){
+		ormservice.clear();
+
+		cat = entityNew("Category");
+		cat.setCategory('unitTest');
+		cat.setDescription('unitTest');
+		entitySave(cat);ORMFlush();
+
+		try{
+			test = entityLoad("Category", {"category"="unitTest"}, true );
+			//debug(test);
+			ormservice.delete(entity=test,flush=true);
+			test = entityLoad("Category",{category="unitTest"}, true);
 			assertTrue( isNull(test) );
 		}
 		catch(any e){
@@ -256,7 +348,7 @@ component extends="coldbox.system.testing.BaseTestCase"{
 			q.execute(sql="delete from categories where category = 'unitTest'");
 		}
 	}
-	
+
 	function testSaveNoTransaction(){
 
 		//mocks
@@ -276,13 +368,13 @@ component extends="coldbox.system.testing.BaseTestCase"{
 			assertTrue( arrayLen(mockEventHandler.$callLog().postSave) );
 			var q = new Query(datasource="coolblog");
 			var result = q.execute(sql="select * from categories where category = 'unitTest'").getResult();
-			assertTrue( result.recordcount eq 0 ); 
+			assertTrue( result.recordcount eq 0 );
 		}
 		catch(any e){
 			fail(e.detail & e.message);
 		}
 	}
-	
+
 	function testSaveAll(){
 
 		//mocks
@@ -293,13 +385,44 @@ component extends="coldbox.system.testing.BaseTestCase"{
 		cat = entityNew("Category");
 		cat.setCategory('unitTest');
 		cat.setDescription('unitTest at #now()#');
-		
+
 		cat2 = entityNew("Category");
 		cat2.setCategory("unitTest");
 		cat2.setDescription('unitTest at #now()#');
 
 		try{
 			ormservice.saveAll( [cat,cat2] );
+			assertTrue( len(cat.getCatID()) );
+			assertTrue( len(cat2.getCatID()) );
+			assertTrue( arrayLen(mockEventHandler.$callLog().preSave) );
+			assertTrue( arrayLen(mockEventHandler.$callLog().postSave) );
+		}
+		catch(any e){
+			fail(e.detail & e.message);
+		}
+		finally{
+			var q = new Query(datasource="coolblog");
+			q.execute(sql="delete from categories where category = 'unitTest'");
+		}
+	}
+
+	function testSaveAllWithFlush(){
+
+		//mocks
+		mockEventHandler = getMockBox().createEmptyMock("coldbox.system.orm.hibernate.EventHandler");
+		mockEventHandler.$("preSave").$("postSave");
+		ormService.$property("ORMEventHandler","variables",mockEventHandler);
+
+		cat = entityNew("Category");
+		cat.setCategory('unitTest');
+		cat.setDescription('unitTest at #now()#');
+
+		cat2 = entityNew("Category");
+		cat2.setCategory("unitTest");
+		cat2.setDescription('unitTest at #now()#');
+
+		try{
+			ormservice.saveAll(entities=[cat,cat2], flush=true);
 			assertTrue( len(cat.getCatID()) );
 			assertTrue( len(cat2.getCatID()) );
 			assertTrue( arrayLen(mockEventHandler.$callLog().preSave) );
@@ -359,8 +482,13 @@ component extends="coldbox.system.testing.BaseTestCase"{
 	function testList(){
 		criteria = {category="general"};
 		test = ormservice.list(entityName="Category",sortorder="category asc",criteria=criteria);
-
 		assertTrue( test.recordcount );
+
+		// as array
+		ormservice.setDefaultAsQuery( false );
+		test = ormservice.list(entityName="Category",sortorder="category asc",criteria=criteria);
+		assertTrue( arrayLen( test ) );
+
 	}
 
 	function testExecuteQuery(){
@@ -387,16 +515,16 @@ component extends="coldbox.system.testing.BaseTestCase"{
 	}
 
 	function testFindByExample(){
-		sample = entityLoad("Category",{category="Training"},true);	
+		sample = entityLoad("Category",{category="Training"},true);
 		test = ormService.findByExample(sample,true);
-		assertEquals( 'Training', test.getCategory() );	
-		
-		sample = entityLoad("Category",{category="Training"},true);	
+		assertEquals( 'Training', test.getCategory() );
+
+		sample = entityLoad("Category",{category="Training"},true);
 		test = ormService.findByExample(sample);
 		//debug(test);
-		assertEquals( 'Training', test[1].getCategory() );	
+		assertEquals( 'Training', test[1].getCategory() );
 	}
-	
+
 	function testFindAll(){
 
 		test = ormservice.findAll("from Category where category = ?",['Training']);
@@ -427,7 +555,7 @@ component extends="coldbox.system.testing.BaseTestCase"{
 
 		test = ormservice.findAllWhere("Category",{category="general"});
 		assertEquals( 2, arrayLen(test) );
-		
+
 		test = ormservice.findAllWhere("Category",{category="general"},"category desc");
 		assertEquals( 2, arrayLen(test) );
 
@@ -448,10 +576,10 @@ component extends="coldbox.system.testing.BaseTestCase"{
 	function testGetPropertyNames(){
 
 		test = ormservice.getPropertyNames(entityName="Category");
-		assertEquals( 3, arrayLen(test) );
+		assertEquals( 4, arrayLen(test) );
 
 		test = ormservice.getPropertyNames(entityName="User");
-		assertEquals( 5, arrayLen(test) );
+		assertEquals( 6, arrayLen(test) );
 	}
 
 	function testGetTableName(){
@@ -471,6 +599,13 @@ component extends="coldbox.system.testing.BaseTestCase"{
 		test = ormservice.convertIDValueToJavaType(entityName="User",id=["1","2","3"]);
 		assertEquals( [1,2,3], test );
 	}
+	
+	function testConvertValueToJavaType(){
+
+		test = ormservice.convertValueToJavaType(entityName="User",propertyName="id",value=testUserID);
+		assertEquals( testUserID, test );
+
+	}
 
 	function testCreateService(){
 
@@ -488,5 +623,37 @@ component extends="coldbox.system.testing.BaseTestCase"{
 
 		test=CategoryService.getTableName();
 		assertEquals( 'categories', test );
+	}
+
+	function testgetEntityGivenName(){
+		// loaded entity
+		test = entityLoad("User",{firstName="Luis"},true);
+		r = ormservice.getEntityGivenName( test );
+		//debug( r );
+		assertEquals( "User", r );
+
+		r = ormservice.getEntityGivenName( entityNew("User") );
+		//debug( r );
+		assertEquals( "User", r );
+	}
+
+	function testNewCriteria(){
+		c = ormservice.newCriteria("User");
+	}
+	
+	function testMerge(){
+		// loaded entity
+		test = entityLoad("User",{firstName="Luis"},true);
+		stats = ormservice.getSessionStatistics();
+		
+		ormclearSession();
+		stats = ormservice.getSessionStatistics();
+		assertEquals( 0, stats.entityCount );
+		
+		test = ormservice.merge( test );
+		stats = ormservice.getSessionStatistics();
+		assertEquals( 1, stats.entityCount );
+
+		
 	}
 }

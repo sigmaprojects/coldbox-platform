@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -39,7 +39,7 @@ Description :
 			
 			// Get searchable index
 			try{
-				index = getAssociatedCache().getObjectStore().getIndexer().getSortedKeys("LastAccesed","numeric","asc");
+				index = getAssociatedCache().getObjectStore().getIndexer().getSortedKeys("LastAccessed","numeric","asc");
 				// process evictions
 				processEvictions( index );
 			}

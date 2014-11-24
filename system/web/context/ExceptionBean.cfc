@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -155,7 +155,7 @@ Modification History:
 		<cfset var tagContextLength = ArrayLen(arrayTagContext)>
 		<cfif structkeyExists(instance.exceptionStruct, "TagContext") and tagContextLength>
 			<cfloop from="1" to="#tagContextLength#" index="i">
-			  <cfsavecontent variable="entry"><cfoutput>ID: <cfif not structKeyExists(arrayTagContext[i], "ID")>N/A<cfelse>#arrayTagContext[i].ID#</cfif>; LINE: #arrayTagContext[i].LINE#; TEMPLATE: #arrayTagContext[i].Template# #chr(13)#</cfoutput></cfsavecontent>
+			  <cfsavecontent variable="entry"><cfoutput>ID: <cfif not structKeyExists(arrayTagContext[i], "ID")>N/A<cfelse>#arrayTagContext[i].ID#</cfif>; LINE: #arrayTagContext[i].LINE#; TEMPLATE: #arrayTagContext[i].Template# #chr(13)##chr(10)#</cfoutput></cfsavecontent>
 			  <cfset rtnString = rtnString & entry>
 			</cfloop>
 			<cfreturn rtnString>
@@ -299,8 +299,11 @@ Modification History:
 			if ( getTagContextAsString() neq "" ){
 				buffer.append("CFTagContext=" & getTagContextAsString() & chr(13));
 			}
-			if ( getExtraInfo() neq "" ){
+			if ( isSimpleValue( getExtraInfo() ) ){
 				buffer.append("CFExtraInfo=" & getExtraInfo() & chr(13));
+			}
+			else{
+				buffer.append("CFExtraInfo=" & serializeJSON( getExtraInfo() ) & chr(13));
 			}
 			return buffer.toString();
 		

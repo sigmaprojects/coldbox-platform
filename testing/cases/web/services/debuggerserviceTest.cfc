@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -16,7 +16,7 @@ Modification History:
 <cfscript>
 	function setup(){
 		//Setup ColdBox Mappings For this Test
-		setAppMapping("/coldbox/testharness");
+		setAppMapping("/coldbox/test-harness");
 		setConfigMapping(ExpandPath(instance.AppMapping & "/config/coldbox.xml.cfm"));
 		super.setup();
 		

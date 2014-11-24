@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -79,19 +79,23 @@ Description :
 			<hr/>
 			Mail Attributes
 			<hr/>
-			<cfdump var="#mail.getMemento()#">
+			<cfdump var="#arguments.mail.getMemento()#">
 			<hr/>
 			Mail Params 
 			<hr/>
-			<cfdump var="#mail.getMailParams()#">
+			<cfdump var="#arguments.mail.getMailParams()#">
 			<hr/>
 			Mail Parts  
 			<hr/>
-			<cfdump var="#mail.getMailParts()#">
+			<cfdump var="#arguments.mail.getMailParts()#">
 			<hr/>
 			Mail Body
 			<hr/>
-			#mail.getBody()#			
+			<cfif arguments.mail.getMemento().type eq "text">
+		    <pre>#htmlcodeformat( arguments.mail.getBody() )#</pre>
+		    <cfelse>
+		    #arguments.mail.getBody()#
+		    </cfif>
 		</cfoutput>
 		</cfsavecontent>
 		

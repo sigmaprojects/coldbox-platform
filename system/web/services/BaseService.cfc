@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -44,12 +44,12 @@ Modification History:
     </cffunction>
 
 	<!--- Get Controller --->
-	<cffunction name="getController" access="package" output="false" returntype="any" hint="Get controller">
+	<cffunction name="getController" access="public" output="false" returntype="any" hint="Get controller">
 		<cfreturn controller/>
 	</cffunction>
 	
 	<!--- Set Controller --->
-	<cffunction name="setController" access="package" output="false" returntype="void" hint="Set controller">
+	<cffunction name="setController" access="public" output="false" returntype="void" hint="Set controller">
 		<cfargument name="controller" type="any" required="true"/>
 		<cfset variables.controller = arguments.controller/>
 	</cffunction>
@@ -64,11 +64,6 @@ Modification History:
 	
 	<!--- onConfigurationLoad --->
     <cffunction name="onConfigurationLoad" output="false" access="public" returntype="void" hint="Called by loader service when configuration file loads">
-    	<!--- Implemented by Concrete Services --->
-    </cffunction>
-	
-	<!--- onAspectsLoad --->
-    <cffunction name="onAspectsLoad" output="false" access="public" returntype="void" hint="Called by loader service after aspects load">
     	<!--- Implemented by Concrete Services --->
     </cffunction>
 	

@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2008 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldboxframework.com | www.luismajano.com | www.ortussolutions.com
@@ -55,6 +55,11 @@ I oversee and manage ColdBox modules
     <cffunction name="getModuleRegistry" output="false" access="public" returntype="struct" hint="Get the discovered module's registry structure">
     	<cfreturn instance.moduleRegistry>
     </cffunction>
+    
+    <!--- getModuleConfigCache  --->
+    <cffunction name="getModuleConfigCache" access="public" returntype="struct" output="false" hint="Return the loaded module's configuration objects">    
+    	<cfreturn instance.mConfigCache>    
+    </cffunction>
 	
 	<!--- rebuildRegistry --->
     <cffunction name="rebuildModuleRegistry" output="false" access="public" returntype="any" hint="Rescan the module locations directories and re-register all located modules, this method does NOT register or activate any modules, it just reloads the found registry">
@@ -106,16 +111,18 @@ I oversee and manage ColdBox modules
 
 	<!--- registerAndActivateModule --->
     <cffunction name="registerAndActivateModule" output="false" access="public" returntype="void" hint="Register and activate a new module">
-    	<cfargument name="moduleName" 	type="string" required="true" hint="The name of the module to load. It must exist in our module registry and be valid. Else we ignore it by logging a warning and returning false."/>
+    	<cfargument name="moduleName" 		type="string" required="true" hint="The name of the module to load."/>
+		<cfargument name="invocationPath" 	type="string" required="false" default="" hint="The module's invocation path to its root from the webroot (the instantiation path,ex:myapp.myCustomModules), if empty we use registry location, if not we are doing a explicit name+path registration. Do not include the module name, you passed that in the first argument right"/>
 		<cfscript>
-			registerModule(arguments.moduleName);
+			registerModule(arguments.moduleName,arguments.invocationPath);
 			activateModule(arguments.moduleName);
 		</cfscript>
     </cffunction>
-	
+    	
 	<!--- registerModule --->
 	<cffunction name="registerModule" output="false" access="public" returntype="boolean" hint="Register a module's configuration information and config object">
-		<cfargument name="moduleName" 	type="string" required="true" hint="The name of the module to load. It must exist in our module registry and be valid. Else we ignore it by logging a warning and returning false."/>
+		<cfargument name="moduleName" 		type="string" required="true" hint="The name of the module to load."/>
+		<cfargument name="invocationPath" 	type="string" required="false" default="" hint="The module's invocation path to its root from the webroot (the instantiation path,ex:myapp.myCustomModules), if empty we use registry location, if not we are doing a explicit name+path registration. Do not include the module name, you passed that in the first argument right"/>
 		<cfscript>
 			var modulesLocation 		= "";
 			var modulesPath 			= "";
@@ -127,7 +134,22 @@ I oversee and manage ColdBox modules
 			var modulesConfiguration	= controller.getSetting("modules");
 			var appSettings 			= controller.getConfigSettings();
 			
-			// Check if passed module name is invalid, throw exception
+			// Check if incoming invocation path is sent
+			if( len(arguments.invocationPath) ){
+				// Check if passed module name is already registered
+				if( structKeyExists(instance.moduleRegistry, arguments.moduleName) ){
+					getUtil().throwit(message="The module #arguments.moduleName# has already been loaded",
+									  type="ModuleService.DuplicateModuleFound");
+				}
+				// register new incoming location
+				instance.moduleRegistry[ arguments.moduleName ] = { 
+					locationPath 	= "/" & replace( arguments.invocationPath,".","/","all"),
+					physicalPath 	= expandPath( "/" & replace( arguments.invocationPath,".","/","all") ),
+					invocationPath 	= arguments.invocationPath
+				};
+			}
+			
+			// Check if passed module name is not loaded into the registry
 			if( NOT structKeyExists(instance.moduleRegistry, arguments.moduleName) ){
 				getUtil().throwit(message="The module #arguments.moduleName# is not valid",
 								  detail="Valid module names are: #structKeyList(instance.moduleRegistry)#",
@@ -187,6 +209,13 @@ I oversee and manage ColdBox modules
 					viewsLocation 		= "views",
 					pluginsLocation     = "plugins",
 					modelsLocation       = "model"
+				},
+				i18n = {
+					defaultResourceBundle = "",
+					defaultLocale = "",
+					localeStorage = "",
+					unknownTranslation = "",
+					resourceBundles = {}
 				}
 			};
 			
@@ -212,7 +241,6 @@ I oversee and manage ColdBox modules
 			structAppend(appSettings.datasources, mConfig.datasources, true);
 			// Register Webservice aliases
 			structAppend(appSettings.webservices, mConfig.webservices, true);
-			
 			// Log registration
 			instance.logger.debug("Module #arguments.moduleName# registered successfully.");
 			</cfscript>
@@ -251,80 +279,92 @@ I oversee and manage ColdBox modules
 			var interceptorService  = controller.getInterceptorService();
 			var beanFactory 		= controller.getPlugin("BeanFactory");
 			var wirebox				= controller.getWireBox();
-			var wireboxEnabled	 	= controller.getSetting("wirebox").enabled;
-			
+			var flagi18n			= false;
+			var thisBundle			= "";
+
 			// If module not registered, throw exception
-			if(NOT structKeyExists(modules, arguments.moduleName) ){
-				getUtil().throwit(message="Cannot activate module: #arguments.moduleName#",
-								  detail="The module has not been registered, register the module first and then activate it.",
-								  type="ModuleService.IllegalModuleState");
+			if( NOT structKeyExists( modules, arguments.moduleName ) ){
+				getUtil().throwit( message="Cannot activate module: #arguments.moduleName#",
+								   detail="The module has not been registered, register the module first and then activate it.",
+								   type="ModuleService.IllegalModuleState" );
 			}
 		</cfscript>
 
 		<cflock name="module.activation.#arguments.moduleName#" type="exclusive" timeout="20" throwontimeout="true">
 		<cfscript>
 			// Get module settings
-			mConfig = modules[arguments.moduleName];
+			mConfig = modules[ arguments.moduleName ];
 
 			// preModuleLoad interception
-			iData = {moduleLocation=mConfig.path,moduleName=arguments.moduleName};
-			interceptorService.processState("preModuleLoad",iData);
+			iData = { moduleLocation=mConfig.path,moduleName=arguments.moduleName };
+			interceptorService.processState( "preModuleLoad", iData );
 
 			// Register handlers
 			mConfig.registeredHandlers = controller.getHandlerService().getHandlerListing( mconfig.handlerPhysicalPath );
-			mConfig.registeredHandlers = arrayToList(mConfig.registeredHandlers);
+			mConfig.registeredHandlers = arrayToList( mConfig.registeredHandlers );
 
 			// Register the Config as an observable also.
-			interceptorService.registerInterceptor(interceptorObject=instance.mConfigCache[arguments.moduleName]);
+			interceptorService.registerInterceptor( interceptorObject=instance.mConfigCache[ arguments.moduleName ], interceptorName="ModuleConfig:#arguments.moduleName#" );
 
 			// Register Interceptors with Announcement service
-			for(y=1; y lte arrayLen(mConfig.interceptors); y++){
-				interceptorService.registerInterceptor(interceptorClass=mConfig.interceptors[y].class,
-													   interceptorProperties=mConfig.interceptors[y].properties,
-													   interceptorName=mConfig.interceptors[y].name);
+			for( y=1; y lte arrayLen( mConfig.interceptors ); y++ ){
+				interceptorService.registerInterceptor( interceptorClass=mConfig.interceptors[ y ].class,
+													    interceptorProperties=mConfig.interceptors[ y ].properties,
+													    interceptorName=mConfig.interceptors[ y ].name);
 				// Loop over module interceptors to autowire them
-				beanFactory.autowire(target=interceptorService.getInterceptor(mConfig.interceptors[y].name,true),
-					     			 targetID=mConfig.interceptors[y].class);		
+				beanFactory.autowire( target=interceptorService.getInterceptor( mConfig.interceptors[ y ].name, true ),
+					     			  targetID=mConfig.interceptors[ y ].class );		
 			}
 			
-			//////////////// COMPAT MODE WIREBOX + BEANFACTORY REMOVE BY 3.1 FOR WIREBOX ///////////////////////
-			
-			// Register Model path if it exists as a scan location.
+			// Register Model path if it exists as a scan location in wirebox
 			if( directoryExists( mconfig.modelsPhysicalPath ) ){
-				beanFactory.appendExternalLocations( mConfig.modelsInvocationPath );
+				wirebox.getBinder().scanLocations( mConfig.modelsInvocationPath );
 			}
-			// Mapping or DSL Registration	
-			if( NOT wireboxEnabled ){
-				// Register Model Mappings Now
-				for(key in mConfig.modelMappings){
-					// Default alias check
-					if( NOT structKeyExists(mConfig.modelMappings[key], "alias") ){
-						mConfig.modelMappings[key].alias = "";
-					}
-					// Register mapping
-					beanFactory.addModelMapping(alias = listAppend(key,mConfig.modelMappings[key].alias),
-												path  = mConfig.modelMappings[key].path);
-				}
-			}
-			else{
-				wirebox.getBinder().loadDataDSL( mConfig.wirebox );
-			}
-			/////////////////////////////////////////////////////////////////////////////////////////////////////////
-			
+			// Mapping DSL Registration	
+			wirebox.getBinder().loadDataDSL( mConfig.wirebox );
+						
 			// Register module routing entry point pre-pended to routes
-			if( controller.settingExists('sesBaseURL') AND len(mConfig.entryPoint) AND NOT find(":",mConfig.entryPoint)){
-				interceptorService.getInterceptor("SES",true).addModuleRoutes(pattern=mConfig.entryPoint,module=arguments.moduleName,append=false);
+			if( controller.settingExists( 'sesBaseURL' ) AND len( mConfig.entryPoint ) AND NOT find( ":", mConfig.entryPoint ) ){
+				interceptorService.getInterceptor( "SES", true ).addModuleRoutes( pattern=mConfig.entryPoint, module=arguments.moduleName, append=false );
 			}
 			
 			// Call on module configuration object onLoad() if found
-			if( structKeyExists(instance.mConfigCache[arguments.moduleName],"onLoad") ){
-				instance.mConfigCache[arguments.moduleName].onLoad();
+			if( structKeyExists( instance.mConfigCache[ arguments.moduleName ], "onLoad" ) ){
+				instance.mConfigCache[ arguments.moduleName ].onLoad();
 			}
 			
 			// postModuleLoad interception
-			iData = {moduleLocation=mConfig.path,moduleName=arguments.moduleName,moduleConfig=mConfig};
-			interceptorService.processState("postModuleLoad",iData);
+			iData = { moduleLocation=mConfig.path, moduleName=arguments.moduleName, moduleConfig=mConfig };
+			interceptorService.processState( "postModuleLoad", iData );
+			
+			// process i18n settings and register if found, registerAspects() in loader service processes these aspect settings
+			if( len( mConfig.i18n.defaultResourceBundle ) AND NOT len( controller.getSetting( "defaultResourceBundle" ) ) ){
+				controller.setSetting( "defaultResourceBundle", mConfig.i18n.defaultResourceBundle );
+				flagi18n = true;
+			}
+			if( len( mConfig.i18n.unknownTranslation ) AND NOT len( controller.getSetting( "unknownTranslation" ) ) ){
+				controller.setSetting( "unknownTranslation", mConfig.i18n.unknownTranslation );
+				flagi18n = true;
+			}
+			if( len( mConfig.i18n.defaultLocale ) AND NOT len( controller.getSetting( "defaultLocale" ) ) ){
+				controller.setSetting( "defaultLocale", mConfig.i18n.defaultLocale );
+				flagi18n = true;
+			}
+			if( len( mConfig.i18n.localeStorage ) AND NOT len( controller.getSetting( "localeStorage" ) ) ){
+				controller.setSetting( "localeStorage", mConfig.i18n.localeStorage );
+				flagi18n = true;
+			}
+			if( structCount( mConfig.i18n.resourceBundles ) ){
+				structAppend( controller.getSetting( "resourceBundles" ), mConfig.i18n.resourceBundles, true );
+				flagi18n = true;
+			}
+			if( flagi18n ){
+				controller.setSetting( "using_i18N", true );
+			}
 
+			// Mark it as loaded as it is now activated
+			mConfig.activated = true;
+			
 			// Log it
 			instance.logger.debug("Module #arguments.moduleName# activated sucessfully.");
 		</cfscript>
@@ -385,14 +425,16 @@ I oversee and manage ColdBox modules
 			interceptorService.processState("preModuleUnload",iData);
 
 			// Call on module configuration object onLoad() if found
-			if( structKeyExists(instance.mConfigCache[arguments.moduleName],"onUnload") ){
-				instance.mConfigCache[arguments.moduleName].onUnload();
+			if( structKeyExists(instance.mConfigCache[ arguments.moduleName ],"onUnload") ){
+				instance.mConfigCache[ arguments.moduleName ].onUnload();
 			}
 
 			// Unregister all interceptors
-			for(x=1; x lte arrayLen(appConfig.modules[arguments.moduleName].interceptors); x++){
-				interceptorService.unregister(appConfig.modules[arguments.moduleName].interceptors[x].name);
+			for(x=1; x lte arrayLen( appConfig.modules[ arguments.moduleName ].interceptors ); x++){
+				interceptorService.unregister( appConfig.modules[ arguments.moduleName ].interceptors[ x ].name);
 			}
+			// Unregister Config object
+			interceptorService.unregister( "ModuleConfig:#arguments.moduleName#" );
 			
 			// Remove SES if enabled.
 			if( controller.settingExists('sesBaseURL') ){
@@ -400,7 +442,7 @@ I oversee and manage ColdBox modules
 			}
 			
 			//Remove Model Mapping Location
-			controller.getPlugin("BeanFactory").removeExternalLocations(appConfig.modules[arguments.moduleName].invocationPath & "." & "model");
+			controller.getPlugin("BeanFactory").removeExternalLocations(appConfig.modules[ arguments.moduleName ].invocationPath & "." & "model");
 
 			// Remove configuration
 			structDelete(appConfig.modules, arguments.moduleName);
@@ -438,7 +480,7 @@ I oversee and manage ColdBox modules
 		<cfargument name="config" type="struct" required="true" hint="The module config structure"/>
 		<cfscript>
 			var mConfig 	= arguments.config;
-			var oConfig 	= createObject("component", mConfig.invocationPath & ".ModuleConfig");
+			var oConfig 	= createObject( "component", mConfig.invocationPath & ".ModuleConfig" );
 			var toLoad 		= "";
 			var appSettings = controller.getConfigSettings();
 			var x			= 1;
@@ -448,20 +490,25 @@ I oversee and manage ColdBox modules
 			oConfig.getPropertyMixin 	= getUtil().getMixerUtil().getPropertyMixin;
 
 			//MixIn Variables
-			oConfig.injectPropertyMixin("controller",controller);
-			oConfig.injectPropertyMixin("appMapping",controller.getSetting("appMapping"));
-			oConfig.injectPropertyMixin("moduleMapping",mConfig.mapping);
-			oConfig.injectPropertyMixin("modulePath",mConfig.path);
-			oConfig.injectPropertyMixin("log",controller.getLogBox().getLogger(oConfig));
-			// COMPAT MODE: REMOVE BY 3.1
-			if( appSettings.wirebox.enabled ){
-				oConfig.injectPropertyMixin("binder",controller.getWireBox().getBinder());
-			}
-
+			oConfig.injectPropertyMixin( "controller", controller );
+			oConfig.injectPropertyMixin( "appMapping", controller.getSetting("appMapping") );
+			oConfig.injectPropertyMixin( "moduleMapping", mConfig.mapping );
+			oConfig.injectPropertyMixin( "modulePath", mConfig.path );
+			oConfig.injectPropertyMixin( "logBox", controller.getLogBox() );
+			oConfig.injectPropertyMixin( "log", controller.getLogBox().getLogger(oConfig) );
+			oConfig.injectPropertyMixin( "wirebox", controller.getWireBox() );
+			oConfig.injectPropertyMixin( "binder", controller.getWireBox().getBinder() );
+			oConfig.injectPropertyMixin( "cachebox", controller.getCacheBox() );
+			
 			//Configure the module
 			oConfig.configure();
+			
+			// Get parent environment settings and if same convention of 'environment'() found, execute it.
+			if( structKeyExists( oConfig, appSettings.environment ) ){
+				evaluate( "oConfig.#appSettings.environment#()" );
+			}
 
-			//Get Public Module Properties
+			// Get Public Module Properties
 			mConfig.title 				= oConfig.title;
 			mConfig.author 				= oConfig.author;
 			mConfig.webURL				= oConfig.webURL;
@@ -514,23 +561,20 @@ I oversee and manage ColdBox modules
 			}
 			
 			//Get SES Routes
-			mConfig.routes = oConfig.getPropertyMixin("routes","variables",arrayNew(1));
-
-			// COMPAT MODE: REMOVE BY 3.1
-			if( appSettings.wirebox.enabled ){
-				mConfig.wirebox = oConfig.getPropertyMixin("wirebox","variables",structnew());
-			}
-			else{
-				// Get Model Mappings
-				mConfig.modelMappings = oConfig.getPropertyMixin("modelMappings","variables",structnew());
-			}
+			mConfig.routes = oConfig.getPropertyMixin( "routes", "variables", arrayNew(1) );
+			
+			// Wirebox Mappings
+			mConfig.wirebox = oConfig.getPropertyMixin( "wirebox", "variables", structnew() );
 			
 			// Get and Append Module conventions
-			structAppend(mConfig.conventions,oConfig.getPropertyMixin("conventions","variables",structnew()),true);
+			structAppend( mConfig.conventions, oConfig.getPropertyMixin( "conventions", "variables", structnew() ), true );
 			
 			// Get Module Layout Settings
-			structAppend(mConfig.layoutSettings,oConfig.getPropertyMixin("layoutSettings","variables", structnew()),true);
+			structAppend( mConfig.layoutSettings, oConfig.getPropertyMixin( "layoutSettings", "variables", structnew() ), true );
 			
+			// Get i18n Settings
+			structAppend( mConfig.i18n, oConfig.getPropertyMixin( "i18n", "variables", structnew() ), true );
+
 			return oConfig;
 		</cfscript>
 	</cffunction>
@@ -594,6 +638,5 @@ I oversee and manage ColdBox modules
 			return true;
     	</cfscript>
     </cffunction>
-
 
 </cfcomponent>

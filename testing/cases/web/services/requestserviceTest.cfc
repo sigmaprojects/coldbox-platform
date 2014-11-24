@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -9,13 +9,10 @@ Date        :	9/3/2007
 Description :
 	Request service Test
 ----------------------------------------------------------------------->
-<cfcomponent name="requestserviceTest" extends="coldbox.system.testing.BaseTestCase" output="false">
+<cfcomponent extends="coldbox.system.testing.BaseTestCase" appMapping="/coldbox/test-harness">
 
 	<cffunction name="setUp" returntype="void" access="public" output="false">
 		<cfscript>
-		//Setup ColdBox Mappings For this Test
-		setAppMapping("/coldbox/testharness");
-		setConfigMapping(ExpandPath(instance.AppMapping & "/config/coldbox.xml.cfm"));
 		//Call the super setup method to setup the app.
 		super.setup();
 		</cfscript>

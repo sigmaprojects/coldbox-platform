@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -25,6 +25,7 @@ Description :
     	<cfargument name="name" 			required="false" 	hint="The mapping name or CFC instance path to try to build up"/>
 		<cfargument name="dsl"				required="false" 	hint="The dsl string to use to retrieve the instance model object, mutually exclusive with 'name'"/>
 		<cfargument name="initArguments" 	required="false" 	hint="The constructor structure of arguments to passthrough when initializing the instance" colddoc:generic="struct"/>
+		<cfargument name="targetObject" 	required="false"	default="" 	hint="The object requesting the dependency, usually only used by DSL lookups"/>
 	</cffunction>
 	
 	<!--- containsInstance --->

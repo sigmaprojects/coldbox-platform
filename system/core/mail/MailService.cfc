@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -59,15 +59,37 @@ Description :
 			if( NOT mail.propertyExists("server") AND len(mailSettings.getServer()) ){
 				mail.setServer( mailSettings.getServer() );
 			}
-			// Same with username, password and port
+			// Same with username, password, port, useSSL and useTLS
 			if( NOT mail.propertyExists("username") AND len(mailSettings.getUsername()) ){
 				mail.setUsername( mailSettings.getUsername() );
 			}
 			if( NOT mail.propertyExists("password") AND len(mailSettings.getPassword()) ){
 				mail.setPassword( mailSettings.getPassword() );
 			}
-			if( NOT mail.propertyExists("port") AND len(mailSettings.getPort()) ){
+			if( NOT mail.propertyExists("port") AND len(mailSettings.getPort()) and mailSettings.getPort() NEQ 0 ){
 				mail.setPort( mailSettings.getPort() );
+			}
+			if( NOT mail.propertyExists("useSSL")  AND len(mailSettings.getValue("useSSL","")) ){
+				mail.setUseSSL( mailSettings.getValue("useSSL") );
+			}
+			if( NOT mail.propertyExists("useTLS")  AND len(mailSettings.getValue("useTLS","")) ){
+				mail.setUseTLS( mailSettings.getValue("useTLS") );
+			}
+			// set default mail attributes if the MailSettings bean has values
+			if( NOT len(mail.getTo()) AND len(mailSettings.getValue("to","")) ){
+				mail.setTo( mailSettings.getValue("to") );
+			}
+			if( NOT len(mail.getFrom()) AND len(mailSettings.getValue("from","")) ){
+				mail.setFrom( mailSettings.getValue("from") );
+			}
+			if( ( NOT mail.propertyExists("bcc") OR NOT len(mail.getBcc()) ) AND len(mailSettings.getValue("bcc","")) ){
+				mail.setBcc( mailSettings.getValue("bcc") );
+			}
+			if( ( NOT mail.propertyExists("replyto") OR NOT len(mail.getReplyTo()) ) AND len(mailSettings.getValue("replyto","")) ){
+				mail.setReplyTo( mailSettings.getValue("replyto") );
+			}
+			if( ( NOT mail.propertyExists("type") OR NOT len(mail.getType()) ) AND len(mailSettings.getValue("type","")) ){
+				mail.setType( mailSettings.getValue("type") );
 			}
 			
 			return mail;

@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -72,8 +72,8 @@ Description :
 				// Evict if not already marked for eviction or an eternal object.
 				if( md.timeout gt 0 AND NOT md.isExpired ){
 					
-					// Expire Object
-					oCacheManager.expireObject( arguments.index[x] );
+					// Evict The Object
+					oCacheManager.clear( arguments.index[x] );
 					
 					// Record Eviction 
 					oCacheManager.getStats().evictionHit();

@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -13,10 +13,10 @@ Description :
 <cfscript>
 
 	function setup(){
-	
+
 		super.setup();
-		
-		// Config 
+
+		// Config
 		config = {
 			objectDefaultTimeout = 60,
 			objectDefaultLastAccessTimeout = 30,
@@ -27,24 +27,24 @@ Description :
 			evictCount = 1,
 			maxObjects = 200,
 			objectStore = "JDBCStore",
-			dsn   = "cacheTest",
+			dsn   = "coolblog",
 			table = "cacheBox",
 			// This switches the internal provider from normal cacheBox to coldbox enabled cachebox
 			coldboxEnabled = false
 		};
-		
+
 		// Create Provider
 		cache = getMockBox().createMock("coldbox.system.cache.providers.CacheBoxProvider").init();
-		
+
 		// Decorate it
 		cache.setConfiguration( config );
 		cache.setCacheFactory( mockFactory );
 		cache.setEventManager( mockEventManager );
-		
+
 		// Configure the provider
 		cache.configure();
-		
+
 	}
-	
+
 </cfscript>
 </cfcomponent>

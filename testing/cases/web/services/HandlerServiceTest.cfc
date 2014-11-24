@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -13,7 +13,7 @@ Description :
 	function setup(){
 		mockController = getMockBox().createMock(className="coldbox.system.web.Controller",clearMethods=true);
 		mockInterceptorService = getMockBox().createMock(className="coldbox.system.web.services.InterceptorService",clearMethods=true);
-		mockEngine     = getMockBox().createEmptyMock(className="coldbox.system.core.cf.CFMLEngine");
+		mockEngine     = getMockBox().createEmptyMock(className="coldbox.system.core.util.CFMLEngine");
 		
 		mockController.$("getInterceptorService",mockInterceptorService);
 		mockController.$("getCFMLEngine",mockEngine);
@@ -24,7 +24,7 @@ Description :
 	
 	function testRegisterHandlers(){
 		// Mocks
-		mockController.$("getSetting").$args("HandlersPath").$results(expandPath('/coldbox/testharness/handlers'));
+		mockController.$("getSetting").$args("HandlersPath").$results(expandPath('/coldbox/test-harness/handlers'));
 		mockController.$("getSetting").$args("HandlersExternalLocationPath").$results(expandPath('/coldbox/testing/testhandlers'));
 		mockController.$("setSetting");
 		handlers = ["ehGeneral","blog"];
@@ -37,7 +37,7 @@ Description :
 	}
 	
 	function testRecurseListing(){
-		path = expandPath("/coldbox/testharness/handlers");
+		path = expandPath("/coldbox/test-harness/handlers");
 		makePublic(handlerService,"getHandlerListing");
 		
 		files = handlerService.getHandlerListing(path);

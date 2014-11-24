@@ -1,0 +1,1 @@
+﻿<cfoutput>#renderLayout('Embedded')#</cfoutput>

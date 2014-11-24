@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -9,7 +9,7 @@ Date        :	9/3/2007
 Description :
 	Some tests just are expecting to execute
 ----------------------------------------------------------------------->
-<cfcomponent extends="coldbox.system.testing.BaseTestCase" appMapping="/coldbox/testharness">
+<cfcomponent extends="coldbox.system.testing.BaseTestCase" appMapping="/coldbox/test-harness">
 <cfscript>
 	
 	function setup(){
@@ -44,6 +44,7 @@ Description :
 		AssertTrue( listFindNocase(getController().getSetting("RegisteredHandlers"), "dummy") );
 		removeFile( dummyFile );
 	}
+	
 	
 	function testProcessShutdown(){
 		ls.processShutdown();

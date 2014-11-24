@@ -1,13 +1,6 @@
-<cfscript>
-cacheClear();
+﻿<cfscript>
+ f = createObject("java","java.lang.ThreadLocal").init();
+ f.set("test");
 
-cachePut("Test",createUUID());
-
-writeDump(cacheGet("Test"));
-writeDump(cacheCount());
-
-writeDump(cacheGetAllIds());
-
-writeDump( cacheGetMetadata("Test") );
-
+ writeDump( f.get() );
 </cfscript>

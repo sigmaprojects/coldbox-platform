@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -12,24 +12,27 @@ Description :
 <cfcomponent name="cacheTest" extends="coldbox.system.testing.BaseTestCase" output="false">
 <cfscript>
 
+	this.loadColdBox = false;
+	
 	function setup(){
+		super.setup();
+		
 		//Mocks
 		mockFactory  = getMockBox().createEmptyMock(className='coldbox.system.cache.CacheFactory');
 		mockEventManager  = getMockBox().createEmptyMock(className='coldbox.system.core.events.EventPoolManager');
 		mockLogBox	 = getMockBox().createEmptyMock("coldbox.system.logging.LogBox");
-		mockLogger	 = getMockBox().createEmptyMock("coldbox.system.logging.Logger");	
-		
+		mockLogger	 = getMockBox().createEmptyMock("coldbox.system.logging.Logger");
+
 		// Mock Methods
 		mockFactory.$("getLogBox",mockLogBox);
 		mockLogBox.$("getLogger", mockLogger);
-		mockLogger.$("error").$("debug").$("info");
+		mockLogger.$("error").$("debug").$("info").$("canDebug", false);
 		mockEventManager.$("processState");
-		
-		// Config 
+
+		// Config
 		config = {
-			
 		};
-		
+
 		// Create Provider
 		cache = getMockBox().createMock("coldbox.system.cache.providers.RailoProvider").init();
 		
@@ -37,35 +40,35 @@ Description :
 		cache.setConfiguration( config );
 		cache.setCacheFactory( mockFactory );
 		cache.setEventManager( mockEventManager );
-		
+
 		// Configure the provider
-		cache.configure();		
+		cache.configure();
 	}
-	
+
 	function teardown(){
 		cache.clearAll();
 	}
-	
+
 	function testShutdown(){
 		cache.shutdown();
 	}
-	
+
 	function testLookup(){
 		cache.set("test",now(),20);
 		cache.clearStatistics();
-		
+
 		assertEquals( false, cache.lookup("invalid") );
-		assertEquals( true, cache.lookup("test") );		
+		assertEquals( true, cache.lookup("test") );
 	}
-	
+
 	function testLookupQuiet(){
 		cache.set("test",now(),20);
 		cache.clearStatistics();
-	
+
 		assertEquals( false, cache.lookupQuiet("invalid") );
-		assertEquals( true, cache.lookupQuiet("test") );		
+		assertEquals( true, cache.lookupQuiet("test") );
 	}
-	
+
 	function testgetKeys(){
 		cacheClear();
 		cache.set("test",now());
@@ -79,40 +82,54 @@ Description :
 		debug(md);
 		assertEquals( false, structIsEmpty(md) );
 	}
-	
+
 	function testGet(){
 		testVal = {name="luis", age=32};
-		
+
 		cache.set("test",testVal,20);
 		cache.clearStatistics();
-	
+
 		results = cache.get("test");
 		assertEquals( results, testval );
 		//assertEquals( 0, cache.getStats().getMisses() );
 		//assertEquals( 1, cache.getStats().getHits() );
-		
+
 		results = cache.get("test2");
 		assertFalse( isDefined("results") );
 		//assertEquals( 1, cache.getStats().getMisses() );
 	}
 	
+	function testGetOrSet(){
+		cache.clearStatistics();
+		
+		results = cache.getOrSet( objectKey="test", produce=cacheProducer );
+		assertTrue( structKeyExists( results, "name" ) );
+		assertEquals( 2, cache.getStats().getMisses() );
+		assertEquals( 0, cache.getStats().getHits() );
+		
+		results = cache.getOrSet( objectKey="test", produce=cacheProducer );
+		assertTrue( structKeyExists( results, "name" ) );
+		assertEquals( 2, cache.getStats().getMisses() );
+		assertEquals( 1, cache.getStats().getHits() );
+	}
+
 	function testGetQuiet(){
 		testVal = {name="luis", age=32};
-		
+
 		cache.clearStatistics();
 		cache.set("test",testVal,20);
-		
+
 		results = cache.getQuiet("test");
 		debug(results);
 		assertEquals( testVal, results );
 		//assertEquals( 0, cache.getStats().getMisses() );
 		//assertEquals( 0, cache.getStats().getHits() );
 	}
-	
+
 	function testSet(){
 		testVal = {name="luis", age=32};
 		cache.clearAll();
-		
+
 		cache.set("test", testVal ,createTimeSpan(0,0,2,0), createTimeSpan(0,0,1,0));
 		assertEquals( testVal, cache.get("test") );
 		md = cache.getCachedObjectMetadata("test");
@@ -120,11 +137,11 @@ Description :
 		assertEquals( 120*1000, md.timespan);
 		debug(md);
 	}
-	
+
 	function testSetQuiet(){
 		testVal = {name="luis", age=32};
 		cache.clearAll();
-		
+
 		cache.setQuiet("test", testVal ,createTimeSpan(0,0,2,0), createTimeSpan(0,0,1,0));
 		assertEquals( testVal, cache.get("test") );
 		md = cache.getCachedObjectMetadata("test");
@@ -132,38 +149,38 @@ Description :
 		assertEquals( 120*1000, md.timespan);
 		debug(md);
 	}
-	
+
 	function testGetSize(){
 		testVal = {name="luis", age=32};
 		cache.clearAll();
-		
+
 		cache.setQuiet("test", testVal ,createTimeSpan(0,0,2,0), createTimeSpan(0,0,1,0));
-		
+
 		assertEquals(1, cache.getSize() );
 	}
-	
+
 	function testClear(){
 		testVal = {name="luis", age=32};
 		cache.clearAll();
-		
+
 		cache.set("test", testVal ,createTimeSpan(0,0,2,0), createTimeSpan(0,0,1,0));
-		
+
 		assertEquals(1, cache.getSize() );
 		cache.clear("test");
 		assertEquals(0, cache.getSize() );
-		
+
 	}
-	
+
 	function testClearQuiet(){
 		testVal = {name="luis", age=32};
 		cache.clearAll();
-		
+
 		cache.set("test", testVal ,createTimeSpan(0,0,2,0), createTimeSpan(0,0,1,0));
-		
+
 		assertEquals(1, cache.getSize() );
 		cache.clearQuiet("test");
 		assertEquals(0, cache.getSize() );
-		
+
 	}
 
 </cfscript>

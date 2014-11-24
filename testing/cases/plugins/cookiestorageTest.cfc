@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -16,10 +16,8 @@ Description :
 		super.setup();
 		
 		//mocks
-		mockController.$("getCFMLEngine", getMockBox().createEmptyMock("coldbox.system.core.cf.CFMLEngine").$("getEngine","ADOBE"));
-		plugin.$("settingExists",false)
-			.$("getPlugin").$args("JSON").$results( getMockBox().createMock("coldbox.system.plugins.JSON") );
-		plugin.init(mockController);
+		mockController.$("getCFMLEngine", getMockBox().createEmptyMock("coldbox.system.core.util.CFMLEngine").$("getEngine","ADOBE"));
+		plugin.$("settingExists",false).init( mockController );
 		</cfscript>
 	</cffunction>
 	
@@ -44,6 +42,9 @@ Description :
 			plugin.setVar("tester", complex );
 			AssertTrue( plugin.exists("tester") ,"Test Complex set & Exists");
 			debug(cookie);
+			r = plugin.getVar("tester");
+			assertTrue( isStruct( r ) );
+			assertEquals( complex.id, r.id );
 			
 			plugin.deleteVar("tester");
 			AssertFalse( plugin.getVar("tester").length() ,"Remove & Exists for complex");
@@ -80,18 +81,5 @@ Description :
 		
 		</cfscript>
 	</cffunction>
-	
-	<!--- testBackwardsCompatWDDX --->
-    <cffunction name="testBackwardsCompatWDDX" output="false" access="public" returntype="any" hint="">
-    	<cfset data = {
-			name="Luis Majano", coolLevel="8"
-		}>
-    	<cfwddx action="cfml2wddx" input="#data#" output="cookie.unitTest">
-    	
-    	<cfset val = plugin.getVar("unitTest")>
-    	
-    	<cfset debug(val)>
-    	<cfset debug(cookie)>
-    </cffunction>		
 	
 </cfcomponent>

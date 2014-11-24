@@ -1,4 +1,4 @@
-<cfoutput>
+﻿<cfoutput>
 <table border="0" cellpadding="0" cellspacing="1" class="cachebox_debugTables">
   <thead>
   	<tr>
@@ -13,14 +13,16 @@
  	</tr>
   </thead>
   <tbody>
+  	
   <cfloop from="1" to="#cacheKeysLen#" index="x">
   	<cfset thisKey = cacheKeys[x]>
-  	<tr <cfif x mod 2 eq 0>class="even"</cfif> id="cbox_cache_tr_#urlEncodedFormat(thisKey)#">
+	<cfif structKeyExists( cacheMetadata, thisKey )>
+		<tr <cfif x mod 2 eq 0>class="even"</cfif> id="cbox_cache_tr_#urlEncodedFormat(thisKey)#">
 	  	<!--- Link --->
 		<td align="left">
-		  	<a href="javascript:cachebox_openwindow('#URLBase#?debugpanel=cacheviewer&cbox_cacheName=#arguments.cacheName#&cbox_cacheEntry=#urlEncodedFormat( thisKey )#','CacheViewer',650,375,'resizable,scrollbars,status')" 
+		  	<a href="javascript:cachebox_openwindow('#URLBase##iif(Find("?", URLBase), DE('&'), DE('?'))#debugpanel=cacheviewer&cbox_cacheName=#arguments.cacheName#&cbox_cacheEntry=#urlEncodedFormat( thisKey )#','CacheViewer',650,375,'resizable,scrollbars,status')" 
 			   title="#thisKey#">
-		  	#left(thisKey,40)#<cfif len(thisKey) gt 40>...</cfif>
+		  	#thisKey#
 			</a>
 		</td>
 		<!--- Hits --->
@@ -32,7 +34,7 @@
 		<!--- Created --->
 		<td align="center" >#dateformat(cacheMetadata[thisKey][ cacheMDKeyLookup.Created ],"mmm-dd")# <Br/> #timeformat(cacheMetadata[thisKey][ cacheMDKeyLookup.created ],"hh:mm:ss tt")#</td>
 		<!--- Last Accessed --->
-		<td align="center">#dateformat(cacheMetadata[thisKey][ cacheMDKeyLookup.lastAccesed ],"mmm-dd")# <br/> #timeformat(cacheMetadata[thisKey][ cacheMDKeyLookup.lastAccesed ],"hh:mm:ss tt")#</td>
+		<td align="center">#dateformat(cacheMetadata[thisKey][ cacheMDKeyLookup.LastAccessed ],"mmm-dd")# <br/> #timeformat(cacheMetadata[thisKey][ cacheMDKeyLookup.LastAccessed ],"hh:mm:ss tt")#</td>
 	 	<!--- isExpired --->
 		<td align="center">
 			<cfif structKeyExists(cacheMDKeyLookup,"isExpired") and cacheMetadata[thisKey][ cacheMDKeyLookup.isExpired ]>
@@ -43,13 +45,19 @@
 		</td>
 		<!--- Commands --->
 	 	<td align="center">
-			<input type="button" value="DEL" 
+			<input type="button" value="Expire" 
+				   name="cboxbutton_expireentry_#urlEncodedFormat(thisKey)#" id="cboxbutton_expireentry_#urlEncodedFormat(thisKey)#"
+			  	   style="font-size:10px" 
+				   title="Expire this entry from the cache" 
+				   onclick="cachebox_cacheExpireItem('#URLBase#','#urlEncodedFormat(thisKey)#','#arguments.cacheName#')">
+			<input type="button" value="Delete" 
 				   name="cboxbutton_removeentry_#urlEncodedFormat(thisKey)#" id="cboxbutton_removeentry_#urlEncodedFormat(thisKey)#"
 			  	   style="font-size:10px" 
 				   title="Remove this entry from the cache." 
 				   onclick="cachebox_cacheClearItem('#URLBase#','#urlEncodedFormat(thisKey)#','#arguments.cacheName#')">
 		</td>
 	  </tr>
+	</cfif>
   </cfloop>	
   </tbody>		  
 </table>

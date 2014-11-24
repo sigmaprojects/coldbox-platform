@@ -1,4 +1,4 @@
-<!------------------------------------------------------------------------------
+﻿<!------------------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -21,7 +21,7 @@ Luis Majano		07/11/2006		Updated it to work with ColdBox. look at license in the
 <cfcomponent hint="Loads External Java Classes, while providing access to ColdFusion classes"
 			 extends="coldbox.system.Plugin"
 			 output="false"
-			 singleton="true">
+			 singleton>
 
 <!------------------------------------------- CONSTRUCTOR ------------------------------------------->
 
@@ -72,22 +72,23 @@ Luis Majano		07/11/2006		Updated it to work with ColdBox. look at license in the
 		<cfargument name="loadColdFusionClassPath"  type="boolean"  required="false" default="false" hint="Loads the ColdFusion libraries">
 		<cfargument name="parentClassLoader" 		type="any" 		required="false" default=""  hint="(Expert use only) The parent java.lang.ClassLoader to set when creating the URLClassLoader">
 		<!--- ************************************************************* --->
-			<cfset var JavaLoader = "">
-			
-			<!--- setup the javaloader --->
-			<cfif ( not isJavaLoaderInScope() )>
-				<cflock name="#getStaticIDKey()#" throwontimeout="true" timeout="30" type="exclusive">
-					<cfif ( not isJavaLoaderInScope() )>
-						<!--- Place java loader in scope, create it. --->
-						<cfset setJavaLoaderInScope( CreateObject("component","coldbox.system.core.javaloader.JavaLoader").init(argumentCollection=arguments) )>
-					</cfif>
-				</cflock>
-			<cfelse>
-				<cflock name="#getStaticIDKey()#" throwontimeout="true" timeout="30" type="readonly">
-					<!--- Get the javaloader. --->
-					<cfset getJavaLoaderFromScope().init(argumentCollection=arguments)>
-				</cflock>
-			</cfif>
+		<cfset var JavaLoader = "">
+		
+		<!--- setup the javaloader --->
+		<cfif ( not isJavaLoaderInScope() )>
+			<cflock name="#getStaticIDKey()#" throwontimeout="true" timeout="30" type="exclusive">
+				<cfif ( not isJavaLoaderInScope() )>
+					<!--- Place java loader in scope, create it. --->
+					<cfset setJavaLoaderInScope( CreateObject("component","coldbox.system.core.javaloader.JavaLoader").init(argumentCollection=arguments) )>
+				</cfif>
+			</cflock>
+		<cfelse>
+			<cflock name="#getStaticIDKey()#" throwontimeout="true" timeout="30" type="readonly">
+				<!--- Get the javaloader. --->
+				<cfset getJavaLoaderFromScope().init(argumentCollection=arguments)>
+			</cflock>
+		</cfif>
+
 	</cffunction>
 	
 	<!--- getJavaLoader --->
@@ -173,7 +174,7 @@ Luis Majano		07/11/2006		Updated it to work with ColdBox. look at license in the
 	
 	<!--- Get jars from a path as an array --->
 	<cffunction name="queryJars" hint="pulls a query of all the jars in the folder passed" access="public" returntype="array" output="false">
-		<cfargument name="dirPath" type="string" required="true" default="" hint="The directory path to query"/>
+		<cfargument name="dirPath" type="string" required="true" hint="The directory path to query"/>
 		<cfargument name="filter" type="string" required="false" default="*.jar" hint="The directory filter to use"/>
 	
 		<cfset var qJars = 0>

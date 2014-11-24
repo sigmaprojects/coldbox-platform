@@ -1,4 +1,4 @@
-<!-----------------------------------------------------------------------
+﻿<!-----------------------------------------------------------------------
 ********************************************************************************
 Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
 www.coldbox.org | www.luismajano.com | www.ortussolutions.com
@@ -19,16 +19,27 @@ Description :
 
 	<cffunction name="configure" access="public" returntype="void" hint="This is where the ses plugin configures itself." output="false" >
 		<cfscript>
-			// STATIC Reserved Keys as needed for cleanups
-			instance.RESERVED_KEYS 			  	= "handler,action,view,viewNoLayout,module,moduleRouting";
-			instance.RESERVED_ROUTE_ARGUMENTS 	= "constraints,pattern,regexpattern,matchVariables,packageresolverexempt,patternParams,valuePairTranslation,ssl,append";
-			// STATIC Valid Extensions
-			instance.VALID_EXTENSIONS 			= "json,jsont,xml,html,htm,rss";
+			// with closure
+			instance.withClosure = {};
+			// module closure
+			instance.withModule	= "";
 
-			// Routes Array
-			instance.routes = ArrayNew(1);
+			// STATIC Reserved Keys as needed for cleanups
+			instance.RESERVED_KEYS 			  	= "handler,action,view,viewNoLayout,module,moduleRouting,response,statusCode,statusText,condition";
+			instance.RESERVED_ROUTE_ARGUMENTS 	= "constraints,pattern,regexpattern,matchVariables,packageresolverexempt,patternParams,valuePairTranslation,ssl,append";
+
+			// STATIC Valid Extensions
+			instance.VALID_EXTENSIONS 			= "json,jsont,xml,cfm,cfml,html,htm,rss,pdf";
+
+			// Main routes Routing Table
+			instance.routes = [];
 			// Module Routing Table
-			instance.moduleRoutingTable = structnew();
+			instance.moduleRoutingTable = {};
+			// Namespaces Routing Table
+			instance.namespaceRoutingTable = {};
+
+			/************************************** SES PROPERTIES *********************************************/
+
 			// Loose matching flag for regex matches
 			instance.looseMatching = false;
 			// Flag to enable unique or not URLs
@@ -44,29 +55,33 @@ Description :
 			// Initialize the valid extensions to detect
 			instance.validExtensions = instance.VALID_EXTENSIONS;
 
-			// Setting Dependencies
+			/************************************** DEPENDENCIES *********************************************/
+
 			instance.handlersPath 					= getSetting("HandlersPath");
 			instance.handlersExternalLocationPath 	= getSetting("HandlersExternalLocationPath");
 			instance.modules						= getSetting("Modules");
 			instance.eventName						= getSetting("EventName");
 			instance.defaultEvent					= getSetting("DefaultEvent");
-
-			// Dependencies
 			instance.requestService					= getController().getRequestService();
 
 			//Import Configuration
 			importConfiguration();
-			
+
 			// Save the base URL in the application settings
-			setSetting('sesBaseURL', getBaseURL() );
-			setSetting('htmlBaseURL', replacenocase(getBaseURL(),"index.cfm",""));
+			setSetting('sesBaseURL', instance.baseURL );
+			setSetting('htmlBaseURL', replacenocase( instance.baseURL, "index.cfm", "") );
+
+			// Configure Context, Just in case
+			controller.getRequestService().getContext()
+				.setIsSES( true )
+				.setSESBaseURL( instance.baseURL );
 		</cfscript>
 	</cffunction>
 
 <!------------------------------------------- INTERCEPTION POINTS ------------------------------------------->
 
 	<!--- Pre execution process --->
-	<cffunction name="preProcess" access="public" returntype="void" hint="This is the route dispatch" output="false" >
+	<cffunction name="onRequestCapture" access="public" returntype="void" hint="This is the route dispatch" output="false" >
 		<!--- ************************************************************* --->
 		<cfargument name="event" 		 required="true" hint="The event object.">
 		<cfargument name="interceptData" required="true" hint="interceptData of intercepted info.">
@@ -77,7 +92,7 @@ Description :
 			var key 		 = "";
 			var routedStruct = structnew();
 			var rc 			 = arguments.event.getCollection();
-			var cleanedPaths = getCleanedPaths(rc,arguments.Event);
+			var cleanedPaths = getCleanedPaths( rc, arguments.event );
 			var HTTPMethod	 = arguments.event.getHTTPMethod();
 
 			// Check if disabled or in proxy mode, if it is, then exit out.
@@ -87,7 +102,7 @@ Description :
 			if( instance.autoReload ){ configure(); }
 
 			// Set that we are in ses mode
-			arguments.event.setIsSES(true);
+			arguments.event.setIsSES( true );
 
 			// Check for invalid URLs if in strict mode via unique URLs
 			if( instance.uniqueURLs ){
@@ -96,23 +111,23 @@ Description :
 
 			// Extension detection if enabled, so we can do cool extension formats
 			if( instance.extensionDetection ){
-				cleanedPaths["pathInfo"] = detectExtension(cleanedPaths["pathInfo"],arguments.event);
+				cleanedPaths["pathInfo"] = detectExtension( cleanedPaths["pathInfo"], arguments.event );
 			}
 
 			// Find a route to dispatch
 			aRoute = findRoute(action=cleanedPaths["pathInfo"],event=arguments.event);
-
+			
 			// Now route should have all the key/pairs from the URL we need to pass to our event object for processing
 			for( key in aRoute ){
 				// Reserved Keys Check, only translate NON reserved keys
-				if( not listFindNoCase(instance.RESERVED_KEYS,key) ){
-					rc[key] = aRoute[key];
-					routedStruct[key] = aRoute[key];
+				if( not listFindNoCase( instance.RESERVED_KEYS, key ) ){
+					rc[ key ] = aRoute[ key ];
+					routedStruct[ key ] = aRoute[ key ];
 				}
 			}
 
 			// Create Event To Dispatch if handler key exists
-			if( structKeyExists(aRoute,"handler") ){
+			if( structKeyExists( aRoute,"handler" ) ){
 				// If no action found, default to the convention of the framework, must likely 'index'
 				if( NOT structKeyExists(aRoute,"action") ){
 					aRoute.action = getDefaultFrameworkAction();
@@ -135,40 +150,80 @@ Description :
 					}
 				}
 				// Create routed event
-				rc[instance.eventName] = aRoute.handler & "." & aRoute.action;
-
+				rc[ instance.eventName ] = aRoute.handler & "." & aRoute.action;
+ 
 				// Do we have a module?If so, create routed module event.
-				if( len(aRoute.module) ){
-					rc[instance.eventName] = aRoute.module & ":" & rc[instance.eventName];
+				if( len( aRoute.module ) ){
+					rc[ instance.eventName ] = aRoute.module & ":" & rc[ instance.eventName ];
 				}
 
 			}// end if handler exists
 
 			// See if View is Dispatched
-			if( structKeyExists(aRoute,"view") ){
+			if( structKeyExists( aRoute, "view" ) ){
 				// Dispatch the View
-				arguments.event.setView(name=aRoute.view,noLayout=aRoute.viewNoLayout);
-				arguments.event.noExecution();
+				arguments.event.setView(name=aRoute.view, noLayout=aRoute.viewNoLayout)
+					.noExecution();
+			}
+			// See if Response is dispatched
+			if( structKeyExists( aRoute, "response" ) ){
+				renderResponse( aRoute, arguments.event );
 			}
 
 			// Save the Routed Variables so event caching can verify them
-			arguments.event.setRoutedStruct(routedStruct);
-
-			// Execute Cache Test now that routing has been done. We override, because events are determined until now.
-			instance.requestService.eventCachingTest(context=arguments.event);
+			arguments.event.setRoutedStruct( routedStruct );
 		</cfscript>
 	</cffunction>
+	
+	<!--- renderResponse --->    
+    <cffunction name="renderResponse" output="false" access="private" returntype="any" hint="Render a RESTful response">    
+    	<cfargument name="route" required="true" hint="The route response"/>
+    	<cfargument name="event" required="true" hint="The event object.">
+		<cfscript>
+			var aRoute 			= arguments.route;
+			var replacements 	= "";
+			var thisReplacement = "";
+			var thisKey			= "";
+			var theResponse		= "";
+			
+			// standardize status codes
+			if( !structKeyExists( aRoute, "statusCode") ){ aRoute.statusCode = 200; }
+			if( !structKeyExists( aRoute, "statusText") ){ aRoute.statusText = ""; }
+				
+			// simple values
+			if( isSimpleValue( aRoute.response ) ){
+				// setup default response
+				theResponse = aRoute.response;
+				// String replacements
+				replacements = reMatchNoCase( "{[^{]+?}", aRoute.response );
+				for( thisReplacement in replacements ){
+					thisKey = reReplaceNoCase( thisReplacement, "({|})", "", "all" );
+					if( event.valueExists( thisKey ) ){				
+						theResponse = replace( aRoute.response, thisReplacement, event.getValue( thisKey ), "all");
+					}
+				}
+				
+			}
+			// Closure
+			else{
+				theResponse = aRoute.response( event.getCollection() );				
+			} 
+			
+			// render it out
+			event.renderdata(data=theResponse, statusCode=aRoute.statusCode, statusText=aRoute.statusText)
+				.noExecution();
+    	</cfscript>    
+    </cffunction>
 
 <!------------------------------------------- PUBLIC ------------------------------------------->
 
 	<!--- addModuleRoutes --->
-	<cffunction name="addModuleRoutes" output="false" access="public" returntype="void" hint="Add modules routes in the specified position">
+	<cffunction name="addModuleRoutes" output="false" access="public" returntype="any" hint="Register modules routes in the specified position in the main routing table, and returns itself">
 		<cfargument name="pattern" type="string"  required="true"  hint="The pattern to match against the URL." />
 		<cfargument name="module"  type="string"  required="true"  hint="The module to load routes for"/>
-		<cfargument name="append"  type="boolean" required="false" default="true" hint="Whether the module entry point route should be appended or pre-pended to the array. By default we append to the end of the array"/>
+		<cfargument name="append"  type="boolean" required="false" default="true" hint="Whether the module entry point route should be appended or pre-pended to the main routes array. By default we append to the end of the array"/>
 		<cfscript>
 			var mConfig 	 = instance.modules;
-			var routingTable = getModulesRoutingTable();
 			var x 			 = 1;
 			var args		 = structnew();
 
@@ -180,8 +235,8 @@ Description :
 			}
 
 			// Create the module routes container if it does not exist already
-			if( NOT structKeyExists(routingTable, arguments.module) ){
-				routingTable[arguments.module] = arraynew(1);
+			if( NOT structKeyExists(instance.moduleRoutingTable, arguments.module) ){
+				instance.moduleRoutingTable[ arguments.module ] = arraynew(1);
 			}
 
 			// Store the entry point for the module routes.
@@ -189,55 +244,178 @@ Description :
 
 			// Iterate through module routes and process them
 			for(x=1; x lte ArrayLen(mConfig[arguments.module].routes); x=x+1){
-				args = mConfig[arguments.module].routes[x];
-				args.module = arguments.module;
-				addRoute(argumentCollection=args);
+				// Verify if simple value, then treat it as an include
+				if( isSimpleValue( mConfig[arguments.module].routes[x] ) ){
+					// prepare module pivot
+					instance.withModule = arguments.module;
+					// Include it via conventions using declared route
+					includeRoutes(location=mConfig[arguments.module].mapping & "/" & mConfig[arguments.module].routes[x]);
+					// Remove pivot
+					instance.withModule = "";
+				}
+				// else, normal routing
+				else{
+					args = mConfig[arguments.module].routes[x];
+					args.module = arguments.module;
+					addRoute(argumentCollection=args);
+				}
 			}
+
+			return this;
 		</cfscript>
 	</cffunction>
 
-	<!--- Add a new Route --->
-	<cffunction name="addRoute" access="public" returntype="void" hint="Adds a route to dispatch" output="false">
+	<!--- addNamespace --->
+	<cffunction name="addNamespace" output="false" access="public" returntype="any" hint="Register a namespace in the specified position in the main routing table, and returns itself">
+		<cfargument name="pattern" 		type="string"  required="true"  hint="The pattern to match against the URL." />
+		<cfargument name="namespace"  	type="string"  required="true"  hint="The name of the namespace to register"/>
+		<cfargument name="append"  		type="boolean" required="false" default="true" hint="Whether the route should be appended or pre-pended to the array. By default we append to the end of the array"/>
+		<cfscript>
+
+			// Create the namespace routes container if it does not exist already, as we could create many patterns that point to the same namespace
+			if( NOT structKeyExists(instance.namespaceRoutingTable, arguments.namespace) ){
+				instance.namespaceRoutingTable[ arguments.namespace ] = [];
+			}
+
+			// Store the entry point for the namespace
+			addRoute(pattern=arguments.pattern, namespaceRouting=arguments.namespace, append=arguments.append);
+
+			return this;
+		</cfscript>
+	</cffunction>
+
+	<!--- With --->
+	<cffunction name="with" access="public" returntype="any" output="false" hint="Starts a with closure, where all arguments will be prefixed for the next concatenated addRoute() methods until an endWith() is called">
+		<!--- ************************************************************* --->
+		<cfargument name="pattern" 				 type="string" 	required="false" hint="The pattern to match against the URL." />
+		<cfargument name="handler" 				 type="string" 	required="false" hint="The handler to execute if pattern matched.">
+		<cfargument name="action"  				 type="any" 	required="false" hint="The action in a handler to execute if a pattern is matched.  This can also be a structure based on the HTTP method(GET,POST,PUT,DELETE). ex: {GET:'show', PUT:'update', DELETE:'delete', POST:'save'}">
+		<cfargument name="packageResolverExempt" type="boolean" required="false" hint="If this is set to true, then the interceptor will not try to do handler package resolving. Else a package will always be resolved. Only works if :handler is in a pattern">
+		<cfargument name="matchVariables" 		 type="string" 	required="false" hint="A string of name-value pair variables to add to the request collection when this pattern matches. This is a comma delimmitted list. Ex: spaceFound=true,missingAction=onTest">
+		<cfargument name="view"  				 type="string"  required="false" hint="The view to dispatch if pattern matches.  No event will be fired, so handler,action will be ignored.">
+		<cfargument name="viewNoLayout"  		 type="boolean" required="false" hint="If view is choosen, then you can choose to override and not display a layout with the view. Else the view renders in the assigned layout.">
+		<cfargument name="valuePairTranslation"  type="boolean" required="false" hint="Activate convention name value pair translations or not. Turned on by default">
+		<cfargument name="constraints" 			 type="any"  	required="false" hint="A structure of regex constraint overrides for variable placeholders. The key is the name of the variable, the value is the regex to try to match."/>
+		<cfargument name="module" 				 type="string"  required="false" hint="The module to add this route to"/>
+		<cfargument name="moduleRouting" 		 type="string"  required="false" hint="Called internally by addModuleRoutes to add a module routing route."/>
+		<cfargument name="namespace" 			 type="string"  required="false" hint="The namespace to add this route to"/>
+		<cfargument name="namespaceRouting"		 type="string"  required="false" hint="Called internally by addNamespaceRoutes to add a namespaced routing route."/>
+		<cfargument name="ssl" 					 type="boolean" required="false" hint="Makes the route an SSL only route if true, else it can be anything. If an ssl only route is hit without ssl, the interceptor will redirect to it via ssl"/>
+		<cfargument name="append"  				 type="boolean" required="false" hint="Whether the route should be appended or pre-pended to the array. By default we append to the end of the array"/>
+		<cfscript>
+			// set the withClosure
+			instance.withClosure = arguments;
+			return this;
+		</cfscript>
+	</cffunction>
+
+	<!--- endWith --->
+    <cffunction name="endWith" output="false" access="public" returntype="any" hint="End a with closure and returns itself">
+    	<cfscript>
+			instance.withClosure = {};
+			return this;
+    	</cfscript>
+    </cffunction>
+
+    <!--- processWith --->
+    <cffunction name="processWith" output="false" access="private" returntype="any" hint="Process a with closure">
+		<cfargument name="args" required="true" hint="The arguments to process"/>
+    	<cfscript>
+			var w 	= instance.withClosure;
+			var key = "";
+
+			// only process arguments once per addRoute() call.
+			if( structKeyExists(args,"$$withProcessed") ){ return this; }
+
+			for( key in w ){
+				// Check if key exists in with closure
+				if( structKeyExists(w,key) ){
+
+					// Verify if the key does not exist in incoming but it does in with, so default it
+					if ( NOT structKeyExists(args,key) ){
+						args[key] = w[key];
+					}
+					// If it does exist in the incoming arguments and simple value, then we prefix, complex values are ignored.
+					else if ( isSimpleValue( args[key] ) AND NOT isBoolean( args[key] ) ){
+						args[key] = w[key] & args[key];
+					}
+
+				}
+			}
+
+			args.$$withProcessed = true;
+
+			return this;
+    	</cfscript>
+    </cffunction>
+
+    <!--- includeRoutes --->
+    <cffunction name="includeRoutes" output="false" access="public" returntype="any" hint="Includes a routes configuration file as an added import and returns itself after import">
+    	<cfargument name="location" type="any" required="true" hint="The include location of the routes configuration template. Do not add '.cfm'"/>
+    	<cfscript>
+			// verify .cfm or not
+			if( listLast(arguments.location,".") NEQ "cfm" ){
+				arguments.location &= ".cfm";
+			}
+
+			// We are ready to roll
+			try{
+				// Try to remove pathInfoProvider, just in case
+				structdelete(variables,"pathInfoProvider");
+				structdelete(this,"pathInfoProvider");
+				// Import configuration
+				$include( arguments.location );
+			}
+			catch(Any e){
+				$throw("Error importing routes configuration file: #e.message# #e.detail#",e.tagContext.toString(),"SES.IncludeRoutingConfig");
+			}
+			return this;
+    	</cfscript>
+    </cffunction>
+
+   	<!--- Add a new Route --->
+	<cffunction name="addRoute" access="public" returntype="any" output="false" hint="Adds a route to dispatch and returns itself.">
 		<!--- ************************************************************* --->
 		<cfargument name="pattern" 				 type="string" 	required="true"  hint="The pattern to match against the URL." />
 		<cfargument name="handler" 				 type="string" 	required="false" hint="The handler to execute if pattern matched.">
-		<cfargument name="action"  				 type="any" 	required="false" hint="The action in a handler to execute if a pattern is matched.  This can also be a structure or JSON structured based on the HTTP method(GET,POST,PUT,DELETE). ex: {GET:'show', PUT:'update', DELETE:'delete', POST:'save'}">
+		<cfargument name="action"  				 type="any" 	required="false" hint="The action in a handler to execute if a pattern is matched.  This can also be a structure based on the HTTP method(GET,POST,PUT,DELETE). ex: {GET:'show', PUT:'update', DELETE:'delete', POST:'save'}">
 		<cfargument name="packageResolverExempt" type="boolean" required="false" default="false" hint="If this is set to true, then the interceptor will not try to do handler package resolving. Else a package will always be resolved. Only works if :handler is in a pattern">
 		<cfargument name="matchVariables" 		 type="string" 	required="false" hint="A string of name-value pair variables to add to the request collection when this pattern matches. This is a comma delimmitted list. Ex: spaceFound=true,missingAction=onTest">
 		<cfargument name="view"  				 type="string"  required="false" hint="The view to dispatch if pattern matches.  No event will be fired, so handler,action will be ignored.">
 		<cfargument name="viewNoLayout"  		 type="boolean" required="false" default="false" hint="If view is choosen, then you can choose to override and not display a layout with the view. Else the view renders in the assigned layout.">
 		<cfargument name="valuePairTranslation"  type="boolean" required="false" default="true"  hint="Activate convention name value pair translations or not. Turned on by default">
-		<cfargument name="constraints" 			 type="any"  	required="false" default="" hint="A structure or JSON structure of regex constraint overrides for variable placeholders. The key is the name of the variable, the value is the regex to try to match."/>
+		<cfargument name="constraints" 			 type="any"  	required="false" default="" hint="A structure of regex constraint overrides for variable placeholders. The key is the name of the variable, the value is the regex to try to match."/>
 		<cfargument name="module" 				 type="string"  required="false" default="" hint="The module to add this route to"/>
 		<cfargument name="moduleRouting" 		 type="string"  required="false" default="" hint="Called internally by addModuleRoutes to add a module routing route."/>
-		<cfargument name="ssl" 					 type="boolean" required="true"  default="false" hint="Makes the route an SSL only route if true, else it can be anything. If an ssl only route is hit without ssl, the interceptor will redirect to it via ssl"/>
-		<cfargument name="append"  				 type="boolean" required="false" default="true" hint="Whether the module route should be appended or pre-pended to the array. By default we append to the end of the array"/>
+		<cfargument name="namespace" 			 type="string"  required="false" default="" hint="The namespace to add this route to"/>
+		<cfargument name="namespaceRouting"		 type="string"  required="false" default="" hint="Called internally by addNamespaceRoutes to add a namespaced routing route."/>
+		<cfargument name="ssl" 					 type="boolean" required="false" default="false" hint="Makes the route an SSL only route if true, else it can be anything. If an ssl only route is hit without ssl, the interceptor will redirect to it via ssl"/>
+		<cfargument name="append"  				 type="boolean" required="false" default="true" hint="Whether the route should be appended or pre-pended to the array. By default we append to the end of the array"/>
+		<cfargument name="response" 			 type="any" 	required="false" hint="An HTML response string to send back or a closure to be executed that should return the response. The closure takes in a 'params' struct of all matched params and the string will be parsed with the named value pairs as ${param}"/>
+		<cfargument name="statusCode"   		 type="numeric" required="false" hint="The HTTP status code to send to the browser response." />
+		<cfargument name="statusText"   		 type="string"  required="false" hint="Explains the HTTP status code sent to the browser response." />
+		<cfargument name="condition"   		 	 type="any"  	required="false" hint="A closure or UDF to execute that MUST return true to use route if matched or false and continue." />
 		<!--- ************************************************************* --->
 		<cfscript>
 		var thisRoute = structNew();
 		var thisPattern = "";
 		var thisPatternParam = "";
 		var arg = 0;
-		var x =1;
+		var x = 1;
 		var thisRegex = 0;
-		var oJSON = getPlugin("JSON");
-		var jsonRegex = "^(\{|\[)(.)+(\}|\])$";
 		var patternType = "";
+
+		// process a with closure if not empty
+		if( NOT structIsEmpty( instance.withClosure ) ){
+			processWith( arguments );
+		}
+
+		// module closure
+		if( len( instance.withModule ) ){ arguments.module = instance.withModule; }
 
 		// Process all incoming arguments into the route to store
 		for(arg in arguments){
 			if( structKeyExists(arguments,arg) ){ thisRoute[arg] = arguments[arg]; }
-		}
-
-		// Process actions as a JSON structure?
-		if( structKeyExists(arguments,"action") AND isSimpleValue(arguments.action) AND reFindnocase(jsonRegex,arguments.action) ){
-			try{
-				// Inflate action to structure
-				thisRoute.action = oJSON.decode(arguments.action);
-			}
-			catch(Any e){
-				$throw("Invalid JSON action","The action #arguments.action# is not valid JSON","SES.InvalidJSONAction");
-			}
 		}
 
 		// Cleanup Route: Add trailing / to make it easier to parse
@@ -254,21 +432,14 @@ Description :
 		// Check if we have optional args by looking for a ?
 		if( findnocase("?",thisRoute.pattern) AND NOT findNoCase("regex:",thisRoute.pattern) ){
 			processRouteOptionals(thisRoute);
-			return;
+			return this;
 		}
 
 		// Process json constraints?
 		thisRoute.constraints = structnew();
-		// Check if implicit struct first, else try to do JSON conversion.
-		if( isStruct(arguments.constraints) ){ thisRoute.constraints = arguments.constraints; }
-		else if( reFindnocase(jsonRegex,arguments.constraints) ){
-			try{
-				// Inflate constratints to structure
-				thisRoute.constraints = oJSON.decode(arguments.constraints);
-			}
-			catch(Any e){
-				$throw("Invalid JSON constraints","The constraints #arguments.constraints# is not valid JSON","SES.InvalidJSONConstraint");
-			}
+		// Check if implicit struct
+		if( isStruct(arguments.constraints) ){
+			thisRoute.constraints = arguments.constraints;
 		}
 
 		// Init the matching variables
@@ -360,18 +531,28 @@ Description :
 			thisRoute.regexPattern = thisRoute.regexPattern & thisRegex & "/";
 
 		} // end looping of pattern optionals
-		
-		// Add it to the routing map table
-		if( len(arguments.module) ){
+
+		// Add it to the corresponding routing table
+		// MODULES
+		if( len( arguments.module ) ){
 			// Append or PrePend
-			if( arguments.append ){	ArrayAppend(getModuleRoutes(arguments.module), thisRoute); }
-			else{ arrayPrePend(getModuleRoutes(arguments.module), thisRoute); }
+			if( arguments.append ){	ArrayAppend(getModuleRoutes( arguments.module ), thisRoute); }
+			else{ arrayPrePend(getModuleRoutes( arguments.module ), thisRoute); }
 		}
+		// NAMESPACES
+		else if( len( arguments.namespace ) ){
+			// Append or PrePend
+			if( arguments.append ){	arrayAppend( getNamespaceRoutes( arguments.namespace ), thisRoute); }
+			else{ arrayPrePend( getNamespaceRoutes(arguments.namespace), thisRoute); }
+		}
+		// Default Routing Table
 		else{
 			// Append or PrePend
-			if( arguments.append ){	ArrayAppend(getRoutes(), thisRoute); }
-			else{ arrayPrePend(getRoutes(), thisRoute); }
+			if( arguments.append ){	ArrayAppend(instance.routes, thisRoute); }
+			else{ arrayPrePend(instance.routes, thisRoute); }
 		}
+
+		return this;
 		</cfscript>
 	</cffunction>
 
@@ -379,71 +560,77 @@ Description :
 	<cffunction name="getAutoReload" access="public" returntype="any" output="false" hint="Set to auto reload the rules in each request" colddoc:generic="boolean">
 		<cfreturn instance.autoReload>
 	</cffunction>
-	<cffunction name="setAutoReload" access="public" returntype="void" output="false" hint="Get the auto reload flag.">
+	<cffunction name="setAutoReload" access="public" returntype="any" output="false" hint="Set the auto reload flag and return itself">
 		<cfargument name="autoReload" required="true" colddoc:generic="boolean">
 		<cfset instance.autoReload = arguments.autoReload>
+		<cfreturn this>
 	</cffunction>
 
 	<!--- Getter/Setter for uniqueURLs --->
-	<cffunction name="setUniqueURLs" access="public" output="false" returntype="void" hint="Set the uniqueURLs property">
+	<cffunction name="setUniqueURLs" access="public" output="false" returntype="any" hint="Set the uniqueURLs property and return itself">
 		<cfargument name="uniqueURLs" required="true" colddoc:generic="boolean"/>
 		<cfset instance.uniqueURLs = arguments.uniqueURLs />
+		<cfreturn this>
 	</cffunction>
 	<cffunction name="getUniqueURLs" access="public" output="false" returntype="any" hint="Get uniqueURLs" colddoc:generic="boolean">
 		<cfreturn instance.uniqueURLs/>
 	</cffunction>
 
 	<!--- Setter/Getter for Base URL --->
-	<cffunction name="setBaseURL" access="public" output="false" returntype="void" hint="Set the base URL for the application.">
+	<cffunction name="setBaseURL" access="public" output="false" returntype="any" hint="Set the base URL for the application and return itself">
 		<cfargument name="baseURL" type="string" required="true" />
 		<cfset instance.baseURL = arguments.baseURL />
+		<cfreturn this>
 	</cffunction>
 	<cffunction name="getBaseURL" access="public" output="false" returntype="string" hint="Get BaseURL">
-		<cfreturn instance.BaseURL/>
+		<cfreturn instance.baseURL/>
 	</cffunction>
 
 	<!--- Get/set Loose Matching --->
 	<cffunction name="getLooseMatching" access="public" returntype="any" output="false" hint="Get the current loose matching property" colddoc:generic="boolean">
     	<cfreturn instance.looseMatching>
     </cffunction>
-    <cffunction name="setLooseMatching" access="public" returntype="void" output="false" hint="Set the loose matching property of the interceptor">
+    <cffunction name="setLooseMatching" access="public" returntype="any" output="false" hint="Set the loose matching property of the interceptor and return itself">
     	<cfargument name="looseMatching" required="true" colddoc:generic="boolean">
     	<cfset instance.looseMatching = arguments.looseMatching>
+		<cfreturn this>
     </cffunction>
 
 	<!--- get/set Extension Detection --->
 	<cffunction name="getExtensionDetection" access="public" returntype="any" output="false" hint="Get the flag if extension detection is enabled" colddoc:generic="boolean">
     	<cfreturn instance.extensionDetection>
     </cffunction>
-    <cffunction name="setExtensionDetection" access="public" returntype="void" output="false" hint="Call it to activate/deactivate automatic extension detection">
+    <cffunction name="setExtensionDetection" access="public" returntype="any" output="false" hint="Call it to activate/deactivate automatic extension detection and return itself">
     	<cfargument name="extensionDetection" required="true" colddoc:generic="boolean">
     	<cfset instance.extensionDetection = arguments.extensionDetection>
+		<cfreturn this>
     </cffunction>
 
 	<!--- get/set on Invalid Extension --->
 	<cffunction name="getThrowOnInvalidExtension" access="public" returntype="any" output="false" hint="Get if we are throwing or not on invalid extension detection" colddoc:generic="boolean">
     	<cfreturn instance.throwOnInvalidExtension>
     </cffunction>
-    <cffunction name="setThrowOnInvalidExtension" access="public" returntype="void" output="false" hint="Configure the interceptor to throw an exception or not when invalid extensions are detected">
+    <cffunction name="setThrowOnInvalidExtension" access="public" returntype="any" output="false" hint="Configure the interceptor to throw an exception or not when invalid extensions are detected and return itself">
     	<cfargument name="throwOnInvalidExtension" required="true" colddoc:generic="boolean">
     	<cfset instance.throwOnInvalidExtension = arguments.throwOnInvalidExtension>
+		<cfreturn this>
     </cffunction>
 
-	<!--- setValidExtensions --->
-    <cffunction name="setValidExtensions" output="false" access="public" returntype="void" hint="Setup the list of valid extensions to detect automatically for you.: e.g.: json,xml,rss">
+	<!--- get/setValidExtensions --->
+    <cffunction name="setValidExtensions" output="false" access="public" returntype="any" hint="Setup the list of valid extensions to detect automatically for you.: e.g.: json,xml,rss. Return itself">
     	<cfargument name="validExtensions" required="true" hint="A list of valid extensions to allow in a request"/>
     	<cfset instance.validExtensions = arguments.validExtensions>
+		<cfreturn this>
     </cffunction>
-
-	<!--- getValidExtensions --->
-    <cffunction name="getValidExtensions" output="false" access="public" returntype="any" hint="Get the list of valid extensions this interceptor allows">
+	<cffunction name="getValidExtensions" output="false" access="public" returntype="any" hint="Get the list of valid extensions this interceptor allows">
     	<cfreturn instance.validExtensions>
     </cffunction>
 
 	<!--- Getter/Setter Enabled --->
-	<cffunction name="setEnabled" access="public" output="false" returntype="void" hint="Set whether the interceptor is enabled or not.">
+	<cffunction name="setEnabled" access="public" output="false" returntype="any" hint="Set whether the interceptor is enabled or not and return itself">
 		<cfargument name="enabled" required="true" colddoc:generic="boolean"/>
 		<cfset instance.enabled = arguments.enabled />
+		<cfreturn this>
 	</cffunction>
 	<cffunction name="getEnabled" access="public" output="false" returntype="any" hint="Get enabled" colddoc:generic="boolean">
 		<cfreturn instance.enabled/>
@@ -451,35 +638,71 @@ Description :
 
 	<!--- Getter routes --->
 	<cffunction name="getRoutes" access="public" output="false" returntype="any" hint="Get the array containing all the routes" colddoc:generic="array">
-		<cfreturn instance.Routes/>
+		<cfreturn instance.routes/>
 	</cffunction>
 
 	<!--- getModulesRoutingTable --->
 	<cffunction name="getModulesRoutingTable" output="false" access="public" returntype="any" hint="Get the entire modules routing table" colddoc:generic="struct">
 		<cfreturn instance.moduleRoutingTable>
 	</cffunction>
-	
-	<!--- removeModuleRoutes --->
-    <cffunction name="removeModuleRoutes" output="false" access="public" returntype="void" hint="Remove a module's routing table and registration points">
-    	<cfargument name="module" required="true" default="" hint="The name of the module to remove"/>
+
+	<!--- getNamespaceRoutingTable --->
+	<cffunction name="getNamespaceRoutingTable" output="false" access="public" returntype="any" hint="Get the entire namespace routing table" colddoc:generic="struct">
+		<cfreturn instance.namespaceRoutingTable>
+	</cffunction>
+
+	<!--- getNamespaceRoutes --->
+	<cffunction name="getNamespaceRoutes" output="false" access="public" returntype="any" hint="Get a namespace routes array" colddoc:generic="array">
+		<cfargument name="namespace" required="true" hint="The name of the namespace"/>
+		<cfscript>
+			if( structKeyExists(instance.namespaceRoutingTable, arguments.namespace) ){
+				return instance.namespaceRoutingTable[ arguments.namespace ];
+			}
+			$throw(message="Namespace routes for #arguments.namespace# do not exists",
+				  detail="Loaded namespace routes are #structKeyList(instance.namespaceRoutingTable)#",
+				  type="SES.InvalidNamespaceException");
+		</cfscript>
+	</cffunction>
+
+	<!--- removeNamespaceRoutes --->
+    <cffunction name="removeNamespaceRoutes" output="false" access="public" returntype="any" hint="Remove a namespace's routing table and registration points and return itself">
+    	<cfargument name="namespace" required="true" hint="The name of the namespace to remove"/>
 		<cfscript>
 			var routeLen = arrayLen( instance.routes );
 			var x 		 = 1;
 			var toDelete = arrayNew(1);
-			
+
+			// remove all namespace routes
+    		structDelete(instance.namespaceRoutingTable, arguments.namespace);
+			// remove namespace routing entry points
+			for(x=routeLen; x gte 1; x=x-1){
+				if( instance.routes[x].namespaceRouting eq arguments.namespace ){
+					arrayDeleteAt(instance.routes, x);
+				}
+			}
+
+			return this;
+		</cfscript>
+    </cffunction>
+
+	<!--- removeModuleRoutes --->
+    <cffunction name="removeModuleRoutes" output="false" access="public" returntype="any" hint="Remove a module's routing table and registration points and return itself">
+    	<cfargument name="module" required="true" hint="The name of the module to remove"/>
+		<cfscript>
+			var routeLen = arrayLen( instance.routes );
+			var x 		 = 1;
+			var toDelete = arrayNew(1);
+
 			// remove all module routes
     		structDelete(instance.moduleRoutingTable, arguments.module);
 			// remove module routing entry point
-			for(x=1; x lte routeLen; x=x+1){
+			for(x=routeLen; x gte 1; x=x-1){
 				if( instance.routes[x].moduleRouting eq arguments.module ){
-					// store position to delete
-					arrayAppend(toDelete, x);
+					arrayDeleteAt(instance.routes, x);
 				}
 			}
-			// Remove positions from routing.
-			for(x=1; x lte arrayLen(toDelete); x=x+1){
-				arrayDeleteAt(instance.routes, toDelete[x]);
-			}
+
+			return this;
 		</cfscript>
     </cffunction>
 
@@ -487,11 +710,10 @@ Description :
 	<cffunction name="getModuleRoutes" output="false" access="public" returntype="any" hint="Get a modules routes array" colddoc:generic="array">
 		<cfargument name="module" required="true" default="" hint="The name of the module"/>
 		<cfscript>
-			var table = getModulesRoutingTable();
-			if( structKeyExists(table, arguments.module) ){
-				return table[arguments.module];
+			if( structKeyExists(instance.moduleRoutingTable, arguments.module) ){
+				return instance.moduleRoutingTable[ arguments.module ];
 			}
-			$throw(message="Module routes for #arguments.module# do not exists", detail="Loaded module routes are #structKeyList(table)#",type="SES.InvalidModuleException");
+			$throw(message="Module routes for #arguments.module# do not exists", detail="Loaded module routes are #structKeyList(instance.moduleRoutingTable)#",type="SES.InvalidModuleException");
 		</cfscript>
 	</cffunction>
 
@@ -542,13 +764,13 @@ Description :
     </cffunction>
 
 	<!--- setmoduleRoutingTable --->
-	<cffunction name="setModuleRoutingTable" output="false" access="private" returntype="void" hint="Set the module routing table">
+	<cffunction name="setModuleRoutingTable" output="false" access="public" returntype="void" hint="Set the module routing table">
 		<cfargument name="routes" required="true" colddoc:generic="struct"/>
 		<cfset instance.moduleRoutingTable = arguments.routes>
 	</cffunction>
 
 	<!--- Set Routes --->
-	<cffunction name="setRoutes" access="private" output="false" returntype="void" hint="Internal override of the routes array">
+	<cffunction name="setRoutes" access="public" output="false" returntype="void" hint="Internal override of the routes array">
 		<cfargument name="routes" required="true" colddoc:generic="array"/>
 		<cfset instance.routes = arguments.routes/>
 	</cffunction>
@@ -578,7 +800,7 @@ Description :
 		<!--- ************************************************************* --->
 		<cfargument name="routingString" 	required="true" hint="The routing string">
 		<cfargument name="routeParams" 		required="true" hint="The routed params array">
-		<cfargument name="isModule" 		required="false" default="false" hint="Tells package resolver this is an explicit module package resolving call"/>
+		<cfargument name="module"	 		required="false" default="" hint="Tells package resolver this is an explicit module package resolving call"/>
 		<!--- ************************************************************* --->
 		<cfscript>
 			var root 			= instance.handlersPath;
@@ -590,7 +812,8 @@ Description :
 			var routeParamsLen 	= arrayLen(arguments.routeParams);
 			var rString 		= arguments.routingString;
 			var returnString 	= arguments.routingString;
-			
+			var isModule		= len(arguments.module) GT 0;
+
 			// Verify if we have a handler on the route params
 			if( findnocase("handler", arrayToList(arguments.routeParams)) ){
 
@@ -604,6 +827,17 @@ Description :
 					}
 				}
 
+				// Pre-Pend if already a module explicit call and switch the root
+				// Module has already been resolved
+				if( isModule ){
+					// Setup the module entry point
+					newEvent = arguments.module & ":";
+					// Change Physical Path to module now, module detected
+					root = instance.modules[ arguments.module ].handlerPhysicalPath;
+					// Pre Pend The module to the path, so it can wipe it cleanly later.
+					returnString = arguments.module & "/" & returnString;
+				}
+
 				// Now Find Packaging in our stripped rString
 				for(x=1; x lte listLen(rString,"/"); x=x+1){
 
@@ -611,24 +845,22 @@ Description :
 					thisFolder = listgetAt(rString,x,"/");
 
 					// Check if package exists in convention OR external location
-					if( NOT isModule AND
-						(
-							directoryExists(root & "/" & foundPaths & thisFolder)
-							OR
-					    	( len(extRoot) AND directoryExists(extRoot & "/" & foundPaths & thisFolder) )
-						)
-					    ){
+					if( directoryExists(root & "/" & foundPaths & thisFolder)
+						OR
+					    ( len(extRoot) AND directoryExists(extRoot & "/" & foundPaths & thisFolder) )
+					){
 						// Save Found Paths
 						foundPaths = foundPaths & thisFolder & "/";
+
 						// Save new Event
 						if(len(newEvent) eq 0){
 							newEvent = thisFolder & ".";
 						}
 						else{
-							newEvent = newEvent & thisFolder & ".";
+							newEvent &= thisFolder & ".";
 						}
 					}//end if folder found
-					// Module check second
+					// Module check second, if the module is in the URL
 					else if( structKeyExists(instance.modules, thisFolder) ){
 						// Setup the module entry point
 						newEvent = thisFolder & ":";
@@ -648,6 +880,11 @@ Description :
 					returnString = replacenocase(returnString, replace( replace(newEvent,":","/","all") ,".","/","all"), newEvent);
 				}
 			}//end if handler found
+
+			// Module Cleanup
+			if( isModule ){
+				return replaceNoCase(returnString, arguments.module & ":", "");
+			}
 
 			return returnString;
 		</cfscript>
@@ -770,9 +1007,10 @@ Description :
 	<!--- Find a route --->
 	<cffunction name="findRoute" access="private" output="false" returntype="any" hint="Figures out which route matches this request and returns a routed structure">
 		<!--- ************************************************************* --->
-		<cfargument name="action" required="true"  hint="The action evaluated by the path_info">
-		<cfargument name="event"  required="true"  hint="The event object.">
-		<cfargument name="module" required="false" default="" hint="Find a route on a module"/>
+		<cfargument name="action" 	 required="true"  hint="The action evaluated by the path_info">
+		<cfargument name="event" 	 required="true"  hint="The event object.">
+		<cfargument name="module" 	 required="false" default="" hint="Find a route on a module"/>
+		<cfargument name="namespace" required="false" default="" hint="Find a route on a namespace"/>
 		<!--- ************************************************************* --->
 		<cfset var requestString 		 = arguments.action />
 		<cfset var packagedRequestString = "">
@@ -783,17 +1021,23 @@ Description :
 		<cfset var i 					 = 1 />
 		<cfset var x 					 = 1 >
 		<cfset var rc 					 = event.getCollection()>
-		<cfset var _routes 				 = getRoutes()>
-		<cfset var _routesLength 		 = ArrayLen(_routes)>
+		<cfset var _routes 				 = instance.routes>
+		<cfset var _routesLength 		 = arrayLen(_routes)>
+		<cfset var contextRouting		 = {}>
 
 		<cfscript>
 
 			// Module call? Switch routes
 			if( len(arguments.module) ){
-				_routes = getModuleRoutes(arguments.module);
+				_routes = getModuleRoutes( arguments.module );
 				_routesLength = arrayLen(_routes);
 			}
-			
+			// Namespace Call? Switch routes
+			else if( len(arguments.namespace) ){
+				_routes = getNamespaceRoutes( arguments.namespace );
+				_routesLength = arrayLen(_routes);
+			}
+
 			//Remove the leading slash
 			if( len(requestString) GT 1 AND left(requestString,1) eq "/" ){
 				requestString = right(requestString,len(requestString)-1);
@@ -811,8 +1055,23 @@ Description :
 				if( (match.len[1] IS NOT 0 AND getLooseMatching())
 				     OR
 				    (NOT getLooseMatching() AND match.len[1] IS NOT 0 AND match.pos[1] EQ 1) ){
+					
+					// Verify condition matching
+					if( structKeyExists( _routes[ i ], "condition" ) AND NOT isSimpleValue( _routes[ i ].condition ) AND NOT _routes[ i ].condition(requestString) ){
+						// Debug logging
+						if( log.canDebug() ){
+							log.debug("SES Route matched but condition closure did not pass: #_routes[ i ].toString()# on routed string: #requestString#");
+						}
+						// Condition did not pass, move to next route
+						continue;
+					}
+					
 					// Setup the found Route
 					foundRoute = _routes[i];
+					// Is this namespace routing?
+					if( len(arguments.namespace) ){
+						arguments.event.setValue(name="currentRoutedNamespace",value=arguments.namespace,private=true);
+					}
 					// Debug logging
 					if( log.canDebug() ){
 						log.debug("SES Route matched: #foundRoute.toString()# on routed string: #requestString#");
@@ -821,7 +1080,7 @@ Description :
 				}
 
 			}//end finding routes
-			
+
 			// Check if we found a route, else just return empty params struct
 			if( structIsEmpty(foundRoute) ){
 				if( log.canDebug() ){
@@ -831,12 +1090,21 @@ Description :
 			}
 
 			// SSL Checks
-			if( foundRoute.ssl AND NOT event.isSSL()){
-				setNextEvent(uri=cgi.script_name & cgi.path_info,ssl=true,statusCode=302,queryString=cgi.query_string);
+			if( foundRoute.ssl AND NOT event.isSSL() ){
+				setNextEvent(URL=event.getSESBaseURL() & reReplace(cgi.path_info, "^\/", ""), ssl=true, statusCode=302, queryString=cgi.query_string);
 			}
-
-			// Check if the match is a module Routing entry point or not?
-			if( len( foundRoute.moduleRouting ) ){
+			
+			// Check if the match is a module Routing entry point or a namespace entry point or not?
+			if( len( foundRoute.moduleRouting ) OR len( foundRoute.namespaceRouting ) ){
+				// build routing argument struct
+				contextRouting = { action=reReplaceNoCase(requestString,foundRoute.regexpattern,""), event=arguments.event };
+				// add module or namespace
+				if( len( foundRoute.moduleRouting ) ){
+					contextRouting.module = foundRoute.moduleRouting;
+				}
+				else{
+					contextRouting.namespace = foundRoute.namespaceRouting;
+				}
 
 				// Try to Populate the params from the module pattern if any
 				for(x=1; x lte arrayLen(foundRoute.patternParams); x=x+1){
@@ -845,18 +1113,18 @@ Description :
 
 				// Save Found URL
 				arguments.event.setValue(name="currentRoutedURL",value=requestString,private=true);
-				
-				// Try to discover the route via the module routing calls
-				structAppend(params, findRoute(reReplaceNoCase(requestString,foundRoute.regexpattern,""),arguments.event,foundRoute.moduleRouting), true);
+				// process context find
+				structAppend(params, findRoute(argumentCollection=contextRouting), true);
 
 				// Return if parameters found.
 				if( NOT structIsEmpty(params) ){
 					return params;
 				}
 			}
-			
+
 			// Save Found Route
 			arguments.event.setValue(name="currentRoute",value=foundRoute.pattern,private=true);
+
 			// Save Found URL if NOT Found already
 			if( NOT arguments.event.valueExists(name="currentRoutedURL",private=true) ){
 				arguments.event.setValue(name="currentRoutedURL",value=requestString,private=true);
@@ -865,15 +1133,13 @@ Description :
 			// Do we need to do package resolving
 			if( NOT foundRoute.packageResolverExempt ){
 				// Resolve the packages
-				packagedRequestString = packageResolver(requestString,foundRoute.patternParams, len(arguments.module) GT 0);
+				packagedRequestString = packageResolver(requestString,foundRoute.patternParams,arguments.module);
 				// reset pattern matching, if packages found.
 				if( compare(packagedRequestString,requestString) NEQ 0 ){
-
 					// Log package resolved
 					if( log.canDebug() ){
 						log.debug("SES Package Resolved: #packagedRequestString#");
 					}
-
 					// Return found Route recursively.
 					return findRoute(action=packagedRequestString,event=arguments.event);
 				}
@@ -960,17 +1226,18 @@ Description :
 
 			// Get path_info & script name
 			items["pathInfo"] 	= getCGIElement('path_info',arguments.event);
-			items["scriptName"] = trim(reReplacenocase(getCGIElement('script_name',arguments.event),"[/\\]index\.cfm",""));
+			items["scriptName"] = trim( reReplacenocase(getCGIElement('script_name',arguments.event),"[/\\]index\.cfm","") );
 
 			// Clean ContextRoots
-			if( len(getContextRoot()) ){
-				items["pathInfo"] 	= replacenocase(items["pathInfo"],getContextRoot(),"");
+			if( len( getContextRoot() ) ){
+				//items["pathInfo"] 	= replacenocase(items["pathInfo"],getContextRoot(),"");
 				items["scriptName"] = replacenocase(items["scriptName"],getContextRoot(),"");
 			}
 
-			// Clean up the path_info from index.cfm and nested pathing
+			// Clean up the path_info from index.cfm
 			items["pathInfo"] = trim(reReplacenocase(items["pathInfo"],"[/\\]index\.cfm",""));
-			if( len(items["scriptName"]) ){
+			// Clean the scriptname from the pathinfo inccase this is a nested application
+			if( len( items["scriptName"] ) ){
 				items["pathInfo"] = replaceNocase(items["pathInfo"],items["scriptName"],'');
 			}
 
@@ -1051,20 +1318,11 @@ Description :
 				}
 			}
 
-			// We are ready to roll. Import config to setup the routes.
-			try{
-				// Try to remove pathInfoProvider, just in case
-				structdelete(variables,"pathInfoProvider");
-				structdelete(this,"pathInfoProvider");
-				// Include configuration
-				$include(configFilePath);
-			}
-			catch(Any e){
-				$throw("Error including config file: #e.message# #e.detail#",e.tagContext.toString(),"SES.executingConfigException");
-			}
+			// Include configuration
+			includeRoutes( configFilePath );
 
 			// Validate the base URL
-			if ( len(getBaseURL()) eq 0 ){
+			if ( len( getBaseURL() ) eq 0 ){
 				$throw('The baseURL property has not been defined. Please define it using the setBaseURL() method.','','interceptors.SES.invalidPropertyException');
 			}
 		</cfscript>
